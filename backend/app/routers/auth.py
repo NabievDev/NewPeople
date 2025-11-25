@@ -12,7 +12,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -21,7 +21,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
-    username: str = payload.get("sub")
+    username = payload.get("sub")
     if username is None:
         raise credentials_exception
     user = db.query(User).filter(User.username == username).first()
@@ -30,7 +30,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 def require_role(required_role: UserRole):
-    def role_checker(current_user: User = Depends(get_current_user)):
+    def role_checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role != required_role and current_user.role != UserRole.ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -39,7 +39,7 @@ def require_role(required_role: UserRole):
         return current_user
     return role_checker
 
-def require_admin(current_user: User = Depends(get_current_user)):
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -50,20 +50,26 @@ def require_admin(current_user: User = Depends(get_current_user)):
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    if not user.is_active:
+    if not verify_password(form_data.password, str(user.hashed_password)):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not bool(user.is_active):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username, "role": user.role},
+        data={"sub": user.username, "role": str(user.role)},
         expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}

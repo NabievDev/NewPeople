@@ -8,6 +8,20 @@ from app.routers.auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
+@router.get("", response_model=List[Tag])
+async def get_all_tags(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    public_tags = db.query(PublicTag).all()
+    internal_tags = db.query(InternalTag).all()
+    all_tags = []
+    for tag in public_tags:
+        all_tags.append(Tag(id=tag.id, name=tag.name, is_public=True, created_at=tag.created_at))
+    for tag in internal_tags:
+        all_tags.append(Tag(id=tag.id, name=tag.name, is_public=False, created_at=tag.created_at))
+    return all_tags
+
 @router.get("/public", response_model=List[Tag])
 async def get_public_tags(db: Session = Depends(get_db)):
     tags = db.query(PublicTag).all()

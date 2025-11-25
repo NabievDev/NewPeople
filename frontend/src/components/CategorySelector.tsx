@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { categoriesApi } from '../services/api';
 import type { Category } from '../types';
@@ -8,22 +8,37 @@ interface CategorySelectorProps {
   selectedId?: number;
 }
 
+interface CategoryWithChildren extends Category {
+  subcategories?: CategoryWithChildren[];
+}
+
 const CategorySelector: React.FC<CategorySelectorProps> = ({ onSelect, selectedId }) => {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [breadcrumb, setBreadcrumb] = useState<Category[]>([]);
-  const [currentLevel, setCurrentLevel] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<CategoryWithChildren[]>([]);
   const [loading, setLoading] = useState(true);
+  const [breadcrumb, setBreadcrumb] = useState<CategoryWithChildren[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<CategoryWithChildren | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadCategories();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const loadCategories = async () => {
     try {
       const data = await categoriesApi.getAll();
       setCategories(data);
-      const rootCategories = data.filter(cat => !cat.parent_id);
-      setCurrentLevel(rootCategories);
       setLoading(false);
     } catch (error) {
       console.error('Failed to load categories:', error);
@@ -31,28 +46,38 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({ onSelect, selectedI
     }
   };
 
-  const handleCategoryClick = (category: Category) => {
-    const children = categories.filter(cat => cat.parent_id === category.id);
-    
-    if (children.length > 0) {
+  const handleCategoryClick = (category: CategoryWithChildren) => {
+    if (category.subcategories && category.subcategories.length > 0) {
       setBreadcrumb([...breadcrumb, category]);
-      setCurrentLevel(children);
     } else {
+      setSelectedCategory(category);
       onSelect(category.id);
+      setIsOpen(false);
+      setBreadcrumb([]);
     }
   };
 
-  const handleBreadcrumbClick = (index: number) => {
-    if (index === -1) {
-      setBreadcrumb([]);
-      setCurrentLevel(categories.filter(cat => !cat.parent_id));
-    } else {
-      const newBreadcrumb = breadcrumb.slice(0, index + 1);
-      const lastCategory = newBreadcrumb[newBreadcrumb.length - 1];
-      const children = categories.filter(cat => cat.parent_id === lastCategory.id);
+  const handleBackClick = () => {
+    if (breadcrumb.length > 0) {
+      const newBreadcrumb = breadcrumb.slice(0, -1);
       setBreadcrumb(newBreadcrumb);
-      setCurrentLevel(children);
     }
+  };
+
+  const getCurrentLevel = (): CategoryWithChildren[] => {
+    if (breadcrumb.length === 0) {
+      return categories.filter(cat => !cat.parent_id);
+    }
+    const lastCategory = breadcrumb[breadcrumb.length - 1];
+    return lastCategory.subcategories || [];
+  };
+
+  const getDisplayText = () => {
+    if (selectedCategory) {
+      const path = [...breadcrumb.filter(c => c.id !== selectedCategory.id), selectedCategory];
+      return path.map(c => c.name).join(' → ');
+    }
+    return 'Выберите категорию обращения';
   };
 
   if (loading) {
@@ -63,74 +88,134 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({ onSelect, selectedI
     );
   }
 
+  const currentLevel = getCurrentLevel();
+
   return (
-    <div className="space-y-4">
-      {breadcrumb.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center space-x-2 text-sm"
-        >
-          <button
-            onClick={() => handleBreadcrumbClick(-1)}
-            className="text-primary hover:text-primary-700 transition-colors"
+    <div className="relative" ref={dropdownRef}>
+      <motion.button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full px-4 py-3 text-left border-2 rounded-lg transition-all ${
+          selectedCategory
+            ? 'border-primary bg-primary-50 text-gray-900'
+            : 'border-gray-300 bg-white text-gray-600 hover:border-primary'
+        }`}
+        whileHover={{ scale: 1.01 }}
+        whileTap={{ scale: 0.99 }}
+      >
+        <div className="flex items-center justify-between">
+          <span className={selectedCategory ? 'font-medium' : ''}>
+            {getDisplayText()}
+          </span>
+          <motion.svg
+            animate={{ rotate: isOpen ? 180 : 0 }}
+            transition={{ duration: 0.2 }}
+            className="w-5 h-5 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
           >
-            Главная
-          </button>
-          {breadcrumb.map((cat, index) => (
-            <React.Fragment key={cat.id}>
-              <span className="text-gray-400">/</span>
-              <button
-                onClick={() => handleBreadcrumbClick(index)}
-                className="text-primary hover:text-primary-700 transition-colors"
-              >
-                {cat.name}
-              </button>
-            </React.Fragment>
-          ))}
-        </motion.div>
-      )}
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
+          </motion.svg>
+        </div>
+      </motion.button>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <AnimatePresence>
-          {currentLevel.map((category) => (
-            <motion.button
-              key={category.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => handleCategoryClick(category)}
-              className={`p-4 rounded-lg border-2 text-left transition-all duration-300 ${
-                selectedId === category.id
-                  ? 'border-primary bg-primary-50'
-                  : 'border-gray-200 hover:border-primary hover:shadow-md'
-              }`}
-            >
-              <div className="font-semibold text-gray-900">{category.name}</div>
-              {category.description && (
-                <div className="text-sm text-gray-600 mt-1">{category.description}</div>
-              )}
-              {categories.some(cat => cat.parent_id === category.id) && (
-                <div className="text-xs text-primary mt-2">→ Подкатегории</div>
-              )}
-            </motion.button>
-          ))}
-        </AnimatePresence>
-      </div>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-lg shadow-xl max-h-96 overflow-y-auto"
+          >
+            {breadcrumb.length > 0 && (
+              <div className="sticky top-0 bg-gray-50 border-b border-gray-200 p-3">
+                <button
+                  onClick={handleBackClick}
+                  className="flex items-center space-x-2 text-primary hover:text-primary-700 transition-colors"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 19l-7-7 7-7"
+                    />
+                  </svg>
+                  <span className="text-sm font-medium">Назад</span>
+                </button>
+                <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
+                  <span>Путь:</span>
+                  <span className="font-medium">
+                    {breadcrumb.map(c => c.name).join(' → ')}
+                  </span>
+                </div>
+              </div>
+            )}
 
-      {breadcrumb.length > 0 && (
-        <motion.button
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          onClick={() => handleBreadcrumbClick(breadcrumb.length - 2)}
-          className="text-primary hover:text-primary-700 flex items-center space-x-1"
-        >
-          <span>←</span>
-          <span>Назад</span>
-        </motion.button>
-      )}
+            <div className="p-2">
+              {currentLevel.map((category) => (
+                <motion.button
+                  key={category.id}
+                  onClick={() => handleCategoryClick(category)}
+                  className="w-full px-4 py-3 text-left rounded-lg hover:bg-primary-50 transition-colors flex items-center justify-between group"
+                  whileHover={{ x: 4 }}
+                  transition={{ type: 'spring', stiffness: 300 }}
+                >
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">{category.name}</div>
+                    {category.description && (
+                      <div className="text-xs text-gray-600 mt-1">
+                        {category.description}
+                      </div>
+                    )}
+                  </div>
+                  {category.subcategories && category.subcategories.length > 0 ? (
+                    <svg
+                      className="w-5 h-5 text-gray-400 group-hover:text-primary transition-colors"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 5l7 7-7 7"
+                      />
+                    </svg>
+                  ) : (
+                    <svg
+                      className="w-5 h-5 text-green-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  )}
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

@@ -30,6 +30,11 @@ export const authApi = {
     return response.data;
   },
   
+  getCurrentUser: async (): Promise<User> => {
+    const response = await api.get<User>('/auth/me');
+    return response.data;
+  },
+  
   logout: () => {
     localStorage.removeItem('token');
   },

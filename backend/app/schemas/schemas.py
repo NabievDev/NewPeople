@@ -35,6 +35,7 @@ class TagCreate(TagBase):
 
 class Tag(TagBase):
     id: int
+    is_public: bool = True
     created_at: datetime
     
     class Config:
@@ -112,12 +113,15 @@ class User(BaseModel):
     id: int
     username: str
     email: str
-    role: UserRole
+    role: str
     is_active: bool
     created_at: datetime
     
     class Config:
         from_attributes = True
+        json_encoders = {
+            UserRole: lambda v: str(v).split('.')[-1].lower()
+        }
 
 class UserLogin(BaseModel):
     username: str

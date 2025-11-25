@@ -19,10 +19,8 @@ const Login: React.FC = () => {
 
     try {
       await login({ username, password });
-      navigate('/admin');
     } catch (err) {
       setError('Неверное имя пользователя или пароль');
-    } finally {
       setIsLoading(false);
     }
   };
