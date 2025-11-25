@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "python-3.11"]
+modules = ["nodejs-20", "python-3.11", "web"]
 [agent]
 expertMode = true
 
@@ -53,6 +53,10 @@ externalPort = 8000
 [[ports]]
 localPort = 34945
 externalPort = 3000
+
+[[ports]]
+localPort = 40239
+externalPort = 3001
 
 [nix]
 channel = "stable-25_05"
