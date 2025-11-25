@@ -8,6 +8,12 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
     MODERATOR = "moderator"
 
+class AppealStatus(str, enum.Enum):
+    NEW = "new"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+    REJECTED = "rejected"
+
 appeal_public_tags = Table(
     'appeal_public_tags',
     Base.metadata,
@@ -74,6 +80,7 @@ class Appeal(Base):
     phone = Column(String, nullable=True)
     category_id = Column(Integer, ForeignKey('categories.id', ondelete='SET NULL'), nullable=True)
     text = Column(Text, nullable=False)
+    status = Column(Enum(AppealStatus), nullable=False, default=AppealStatus.NEW)
     media_files = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -90,6 +97,7 @@ class Comment(Base):
     appeal_id = Column(Integer, ForeignKey('appeals.id', ondelete='CASCADE'), nullable=False)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     text = Column(Text, nullable=False)
+    is_internal = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     appeal = relationship("Appeal", back_populates="comments")
