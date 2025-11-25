@@ -383,7 +383,17 @@ async def download_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    file_path = os.path.join(settings.UPLOAD_DIR, filename)
+    if '..' in filename or '/' in filename or '\\' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.abspath(os.path.join(settings.UPLOAD_DIR, safe_filename))
+    upload_dir = os.path.abspath(settings.UPLOAD_DIR)
+    
+    if not file_path.startswith(upload_dir):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
+    
     return FileResponse(file_path)
