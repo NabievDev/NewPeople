@@ -98,7 +98,7 @@ class Comment(BaseModel):
 class AppealHistoryItem(BaseModel):
     id: int
     appeal_id: int
-    user_id: int
+    user_id: Optional[int] = None
     action_type: str
     old_value: Optional[str] = None
     new_value: Optional[str] = None

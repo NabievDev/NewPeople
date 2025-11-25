@@ -223,4 +223,11 @@ export const usersApi = {
   },
 };
 
+export const statsApi = {
+  getAll: async (): Promise<Statistics> => {
+    const response = await api.get<Statistics>('/stats');
+    return response.data;
+  },
+};
+
 export default api;

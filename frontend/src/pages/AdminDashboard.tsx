@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { categoriesApi, tagsApi, usersApi } from '../services/api';
+import { categoriesApi, tagsApi, usersApi, statsApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { Category, Tag, User, Statistics } from '../types';
 
@@ -29,7 +29,7 @@ const AdminDashboard: React.FC = () => {
   const loadData = async () => {
     try {
       const [statsData, categoriesData, tagsData, usersData] = await Promise.all([
-        usersApi.getStatistics(),
+        statsApi.getAll(),
         categoriesApi.getAll(),
         tagsApi.getAll(),
         usersApi.getAll(),

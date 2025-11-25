@@ -378,7 +378,11 @@ async def remove_tag_from_appeal(
     raise HTTPException(status_code=404, detail="Tag not found or not associated with appeal")
 
 @router.get("/files/{filename}")
-async def download_file(filename: str):
+async def download_file(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     file_path = os.path.join(settings.UPLOAD_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")

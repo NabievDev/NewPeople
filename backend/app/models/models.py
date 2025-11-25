@@ -119,7 +119,7 @@ class AppealHistory(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     appeal_id = Column(Integer, ForeignKey('appeals.id', ondelete='CASCADE'), nullable=False)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     action_type = Column(Enum(HistoryActionType), nullable=False)
     old_value = Column(String, nullable=True)
     new_value = Column(String, nullable=True)
