@@ -82,14 +82,27 @@ class Appeal(BaseModel):
 
 class CommentCreate(BaseModel):
     content: str
-    is_internal: bool = False
 
 class Comment(BaseModel):
     id: int
     appeal_id: int
     user_id: int
     text: str
-    is_internal: bool
+    files: Optional[str] = None
+    created_at: datetime
+    user: Optional['User'] = None
+    
+    class Config:
+        from_attributes = True
+
+class AppealHistoryItem(BaseModel):
+    id: int
+    appeal_id: int
+    user_id: int
+    action_type: str
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    details: Optional[str] = None
     created_at: datetime
     user: Optional['User'] = None
     
@@ -135,9 +148,18 @@ class TokenData(BaseModel):
     username: Optional[str] = None
     role: Optional[UserRole] = None
 
+class TagStatistics(BaseModel):
+    tag_id: int
+    tag_name: str
+    count: int
+    is_public: bool
+
 class Statistics(BaseModel):
     total_appeals: int
-    appeals_by_category: dict
-    appeals_by_internal_tag: dict
-    total_moderators: int
-    moderator_activity: List[dict]
+    new_appeals: int
+    in_progress_appeals: int
+    resolved_appeals: int
+    rejected_appeals: int
+    public_tag_stats: List[TagStatistics]
+    internal_tag_stats: List[TagStatistics]
+    average_resolution_time: Optional[dict] = None  # weeks, days, hours, minutes

@@ -89,6 +89,7 @@ class Appeal(Base):
     public_tags = relationship("PublicTag", secondary=appeal_public_tags, back_populates="appeals")
     internal_tags = relationship("InternalTag", secondary=appeal_internal_tags, back_populates="appeals")
     comments = relationship("Comment", back_populates="appeal", cascade="all, delete-orphan")
+    history = relationship("AppealHistory", back_populates="appeal", cascade="all, delete-orphan")
 
 class Comment(Base):
     __tablename__ = "comments"
@@ -97,8 +98,33 @@ class Comment(Base):
     appeal_id = Column(Integer, ForeignKey('appeals.id', ondelete='CASCADE'), nullable=False)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     text = Column(Text, nullable=False)
-    is_internal = Column(Boolean, default=False)
+    files = Column(Text, nullable=True)  # JSON array of file paths
     created_at = Column(DateTime, default=datetime.utcnow)
     
     appeal = relationship("Appeal", back_populates="comments")
+    user = relationship("User")
+
+
+class HistoryActionType(str, enum.Enum):
+    STATUS_CHANGE = "status_change"
+    TAG_ADDED = "tag_added"
+    TAG_REMOVED = "tag_removed"
+    COMMENT_ADDED = "comment_added"
+    FILE_ADDED = "file_added"
+    FILE_REMOVED = "file_removed"
+
+
+class AppealHistory(Base):
+    __tablename__ = "appeal_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    appeal_id = Column(Integer, ForeignKey('appeals.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    action_type = Column(Enum(HistoryActionType), nullable=False)
+    old_value = Column(String, nullable=True)
+    new_value = Column(String, nullable=True)
+    details = Column(Text, nullable=True)  # JSON for additional details like file names, comment text
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    appeal = relationship("Appeal", back_populates="history")
     user = relationship("User")

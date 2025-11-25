@@ -17,15 +17,15 @@ async def get_all_tags(
     internal_tags = db.query(InternalTag).all()
     all_tags = []
     for tag in public_tags:
-        all_tags.append(Tag(id=tag.id, name=tag.name, is_public=True, created_at=tag.created_at))
+        all_tags.append(Tag(id=tag.id, name=tag.name, color=tag.color or "#00C9C8", is_public=True, created_at=tag.created_at))
     for tag in internal_tags:
-        all_tags.append(Tag(id=tag.id, name=tag.name, is_public=False, created_at=tag.created_at))
+        all_tags.append(Tag(id=tag.id, name=tag.name, color=tag.color or "#6B7280", is_public=False, created_at=tag.created_at))
     return all_tags
 
 @router.get("/public", response_model=List[Tag])
 async def get_public_tags(db: Session = Depends(get_db)):
     tags = db.query(PublicTag).all()
-    return tags
+    return [Tag(id=tag.id, name=tag.name, color=tag.color or "#00C9C8", is_public=True, created_at=tag.created_at) for tag in tags]
 
 @router.post("/public", response_model=Tag)
 async def create_public_tag(
@@ -37,7 +37,7 @@ async def create_public_tag(
     db.add(db_tag)
     db.commit()
     db.refresh(db_tag)
-    return db_tag
+    return Tag(id=db_tag.id, name=db_tag.name, color=db_tag.color or "#00C9C8", is_public=True, created_at=db_tag.created_at)
 
 @router.delete("/public/{tag_id}")
 async def delete_public_tag(
@@ -58,7 +58,7 @@ async def get_internal_tags(
     db: Session = Depends(get_db)
 ):
     tags = db.query(InternalTag).all()
-    return tags
+    return [Tag(id=tag.id, name=tag.name, color=tag.color or "#6B7280", is_public=False, created_at=tag.created_at) for tag in tags]
 
 @router.post("/internal", response_model=Tag)
 async def create_internal_tag(
@@ -70,7 +70,7 @@ async def create_internal_tag(
     db.add(db_tag)
     db.commit()
     db.refresh(db_tag)
-    return db_tag
+    return Tag(id=db_tag.id, name=db_tag.name, color=db_tag.color or "#6B7280", is_public=False, created_at=db_tag.created_at)
 
 @router.delete("/internal/{tag_id}")
 async def delete_internal_tag(

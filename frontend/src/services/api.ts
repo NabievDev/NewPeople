@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Category, Tag, Appeal, AppealCreate, LoginCredentials, AuthToken, User, Comment } from '../types';
+import type { Category, Tag, Appeal, AppealCreate, LoginCredentials, AuthToken, User, Comment, AppealHistoryItem, Statistics } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -52,7 +52,7 @@ export const categoriesApi = {
   },
   
   update: async (id: number, data: Partial<Category>): Promise<Category> => {
-    const response = await api.put<Category>(`/categories/${id}`, data);
+    const response = await api.patch<Category>(`/categories/${id}`, data);
     return response.data;
   },
   
@@ -67,24 +67,58 @@ export const tagsApi = {
     return response.data;
   },
   
-  create: async (data: Partial<Tag>): Promise<Tag> => {
-    const response = await api.post<Tag>('/tags', data);
+  getPublic: async (): Promise<Tag[]> => {
+    const response = await api.get<Tag[]>('/tags/public');
     return response.data;
   },
   
-  delete: async (id: number): Promise<void> => {
-    await api.delete(`/tags/${id}`);
+  getInternal: async (): Promise<Tag[]> => {
+    const response = await api.get<Tag[]>('/tags/internal');
+    return response.data;
+  },
+  
+  createPublic: async (data: { name: string; color?: string }): Promise<Tag> => {
+    const response = await api.post<Tag>('/tags/public', data);
+    return response.data;
+  },
+  
+  createInternal: async (data: { name: string; color?: string }): Promise<Tag> => {
+    const response = await api.post<Tag>('/tags/internal', data);
+    return response.data;
+  },
+  
+  deletePublic: async (id: number): Promise<void> => {
+    await api.delete(`/tags/public/${id}`);
+  },
+  
+  deleteInternal: async (id: number): Promise<void> => {
+    await api.delete(`/tags/internal/${id}`);
   },
 };
 
 export const appealsApi = {
-  getAll: async (): Promise<Appeal[]> => {
-    const response = await api.get<Appeal[]>('/appeals');
+  getAll: async (params?: {
+    status?: string;
+    public_tag_id?: number;
+    internal_tag_id?: number;
+    category_id?: number;
+  }): Promise<Appeal[]> => {
+    const response = await api.get<Appeal[]>('/appeals', { params });
     return response.data;
   },
   
   getById: async (id: number): Promise<Appeal> => {
     const response = await api.get<Appeal>(`/appeals/${id}`);
+    return response.data;
+  },
+  
+  search: async (query: string): Promise<Appeal[]> => {
+    const response = await api.get<Appeal[]>('/appeals/search', { params: { q: query } });
+    return response.data;
+  },
+  
+  getHistory: async (id: number): Promise<AppealHistoryItem[]> => {
+    const response = await api.get<AppealHistoryItem[]>(`/appeals/${id}/history`);
     return response.data;
   },
   
@@ -121,20 +155,45 @@ export const appealsApi = {
     return response.data;
   },
   
-  addTag: async (appealId: number, tagId: number): Promise<void> => {
-    await api.post(`/appeals/${appealId}/tags/${tagId}`);
-  },
-  
-  removeTag: async (appealId: number, tagId: number): Promise<void> => {
-    await api.delete(`/appeals/${appealId}/tags/${tagId}`);
-  },
-  
-  addComment: async (appealId: number, content: string, isInternal: boolean): Promise<Comment> => {
-    const response = await api.post<Comment>(`/appeals/${appealId}/comments`, {
-      content,
-      is_internal: isInternal,
+  updateTags: async (id: number, publicTagIds: number[], internalTagIds: number[]): Promise<Appeal> => {
+    const response = await api.put<Appeal>(`/appeals/${id}`, { 
+      public_tag_ids: publicTagIds,
+      internal_tag_ids: internalTagIds
     });
     return response.data;
+  },
+  
+  addTag: async (appealId: number, tagId: number, tagType: 'public' | 'internal'): Promise<void> => {
+    await api.post(`/appeals/${appealId}/tags/${tagId}?tag_type=${tagType}`);
+  },
+  
+  removeTag: async (appealId: number, tagId: number, tagType: 'public' | 'internal'): Promise<void> => {
+    await api.delete(`/appeals/${appealId}/tags/${tagId}?tag_type=${tagType}`);
+  },
+  
+  addComment: async (appealId: number, content: string, files?: FileList): Promise<Comment> => {
+    const formData = new FormData();
+    formData.append('text', content);
+    if (files) {
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+      }
+    }
+    const response = await api.post<Comment>(`/appeals/${appealId}/comments`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  
+  getComments: async (appealId: number): Promise<Comment[]> => {
+    const response = await api.get<Comment[]>(`/appeals/${appealId}/comments`);
+    return response.data;
+  },
+  
+  getFileUrl: (filename: string): string => {
+    return `/api/appeals/files/${filename}`;
   },
 };
 
@@ -144,13 +203,23 @@ export const usersApi = {
     return response.data;
   },
   
-  create: async (data: Partial<User> & { password: string }): Promise<User> => {
+  create: async (data: { username: string; email: string; password: string; role: 'admin' | 'moderator' }): Promise<User> => {
     const response = await api.post<User>('/users', data);
+    return response.data;
+  },
+  
+  update: async (id: number, data: Partial<{ username: string; email: string; password: string; role: string; is_active: boolean }>): Promise<User> => {
+    const response = await api.patch<User>(`/users/${id}`, data);
     return response.data;
   },
   
   delete: async (id: number): Promise<void> => {
     await api.delete(`/users/${id}`);
+  },
+  
+  getStatistics: async (): Promise<Statistics> => {
+    const response = await api.get<Statistics>('/users/statistics');
+    return response.data;
   },
 };
 

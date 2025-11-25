@@ -71,23 +71,27 @@ const AppealCard: React.FC<AppealCardProps> = ({ appeal, onClick, isSelected }) 
 
       <p className="text-sm text-gray-700 line-clamp-3">{appeal.text}</p>
 
-      {appeal.tags && appeal.tags.length > 0 && (
+      {((appeal.public_tags && appeal.public_tags.length > 0) || (appeal.internal_tags && appeal.internal_tags.length > 0)) && (
         <div className="flex flex-wrap gap-1 mt-3">
-          {appeal.tags.slice(0, 3).map((tag) => (
+          {appeal.public_tags?.slice(0, 2).map((tag) => (
             <span
-              key={tag.id}
-              className={`px-2 py-0.5 rounded text-xs ${
-                tag.is_public
-                  ? 'bg-primary-100 text-primary-800'
-                  : 'bg-purple-100 text-purple-800'
-              }`}
+              key={`public-${tag.id}`}
+              className="px-2 py-0.5 rounded text-xs bg-primary-100 text-primary-800"
             >
               {tag.name}
             </span>
           ))}
-          {appeal.tags.length > 3 && (
+          {appeal.internal_tags?.slice(0, 2).map((tag) => (
+            <span
+              key={`internal-${tag.id}`}
+              className="px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-800"
+            >
+              {tag.name}
+            </span>
+          ))}
+          {((appeal.public_tags?.length || 0) + (appeal.internal_tags?.length || 0)) > 4 && (
             <span className="px-2 py-0.5 text-xs text-gray-500">
-              +{appeal.tags.length - 3}
+              +{(appeal.public_tags?.length || 0) + (appeal.internal_tags?.length || 0) - 4}
             </span>
           )}
         </div>

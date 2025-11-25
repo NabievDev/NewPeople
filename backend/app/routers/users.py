@@ -89,42 +89,79 @@ async def get_statistics(
     current_user: UserModel = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
+    from app.models.models import appeal_internal_tags, appeal_public_tags, InternalTag, PublicTag, AppealStatus
+    from app.schemas.schemas import TagStatistics
+    from datetime import datetime
+    
     total_appeals = db.query(Appeal).count()
+    new_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.NEW).count()
+    in_progress_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.IN_PROGRESS).count()
+    resolved_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.RESOLVED).count()
+    rejected_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.REJECTED).count()
     
-    appeals_by_category = {}
-    category_stats = db.query(
-        Appeal.category_id,
-        func.count(Appeal.id)
-    ).group_by(Appeal.category_id).all()
+    # Public tag statistics
+    public_tag_stats = []
+    public_tags = db.query(PublicTag).all()
+    for tag in public_tags:
+        count = db.query(appeal_public_tags).filter(appeal_public_tags.c.tag_id == tag.id).count()
+        public_tag_stats.append(TagStatistics(
+            tag_id=tag.id,
+            tag_name=tag.name,
+            count=count,
+            is_public=True
+        ))
     
-    for cat_id, count in category_stats:
-        appeals_by_category[str(cat_id) if cat_id else "Uncategorized"] = count
+    # Internal tag statistics
+    internal_tag_stats = []
+    internal_tags = db.query(InternalTag).all()
+    for tag in internal_tags:
+        count = db.query(appeal_internal_tags).filter(appeal_internal_tags.c.tag_id == tag.id).count()
+        internal_tag_stats.append(TagStatistics(
+            tag_id=tag.id,
+            tag_name=tag.name,
+            count=count,
+            is_public=False
+        ))
     
-    appeals_by_internal_tag = {}
-    from app.models.models import appeal_internal_tags, InternalTag
-    tag_stats = db.query(
-        InternalTag.name,
-        func.count(appeal_internal_tags.c.appeal_id)
-    ).join(appeal_internal_tags).group_by(InternalTag.id).all()
+    # Calculate average resolution time (from new to resolved/rejected)
+    resolved_or_rejected = db.query(Appeal).filter(
+        Appeal.status.in_([AppealStatus.RESOLVED, AppealStatus.REJECTED])
+    ).all()
     
-    for tag_name, count in tag_stats:
-        appeals_by_internal_tag[tag_name] = count
-    
-    total_moderators = db.query(UserModel).filter(UserModel.is_active == True).count()
-    
-    moderator_activity = []
-    moderators = db.query(UserModel).all()
-    for moderator in moderators:
-        comment_count = db.query(Comment).filter(Comment.user_id == moderator.id).count()
-        moderator_activity.append({
-            "username": moderator.username,
-            "comments": comment_count
-        })
+    average_resolution_time = None
+    if resolved_or_rejected:
+        total_seconds = 0
+        count = 0
+        for appeal in resolved_or_rejected:
+            if appeal.created_at and appeal.updated_at:
+                diff = appeal.updated_at - appeal.created_at
+                total_seconds += diff.total_seconds()
+                count += 1
+        
+        if count > 0:
+            avg_seconds = total_seconds / count
+            weeks = int(avg_seconds // (7 * 24 * 3600))
+            remaining = avg_seconds % (7 * 24 * 3600)
+            days = int(remaining // (24 * 3600))
+            remaining = remaining % (24 * 3600)
+            hours = int(remaining // 3600)
+            remaining = remaining % 3600
+            minutes = int(remaining // 60)
+            
+            average_resolution_time = {
+                "weeks": weeks,
+                "days": days,
+                "hours": hours,
+                "minutes": minutes
+            }
     
     return Statistics(
         total_appeals=total_appeals,
-        appeals_by_category=appeals_by_category,
-        appeals_by_internal_tag=appeals_by_internal_tag,
-        total_moderators=total_moderators,
-        moderator_activity=moderator_activity
+        new_appeals=new_appeals,
+        in_progress_appeals=in_progress_appeals,
+        resolved_appeals=resolved_appeals,
+        rejected_appeals=rejected_appeals,
+        public_tag_stats=public_tag_stats,
+        internal_tag_stats=internal_tag_stats,
+        average_resolution_time=average_resolution_time
     )
