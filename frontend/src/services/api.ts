@@ -18,13 +18,13 @@ api.interceptors.request.use((config) => {
 
 export const authApi = {
   login: async (credentials: LoginCredentials): Promise<AuthToken> => {
-    const formData = new FormData();
-    formData.append('username', credentials.username);
-    formData.append('password', credentials.password);
+    const params = new URLSearchParams();
+    params.append('username', credentials.username);
+    params.append('password', credentials.password);
     
-    const response = await api.post<AuthToken>('/auth/login', formData, {
+    const response = await api.post<AuthToken>('/auth/login', params, {
       headers: {
-        'Content-Type': 'multipart/form-data',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
     });
     return response.data;

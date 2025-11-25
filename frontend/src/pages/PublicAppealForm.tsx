@@ -81,7 +81,7 @@ const PublicAppealForm: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="card"
+            className="card overflow-visible"
           >
             <h2 className="text-2xl font-bold text-gray-900 mb-6">
               Выберите категорию обращения
