@@ -1,0 +1,182 @@
+# Система управления обращениями граждан для партии "Новые Люди"
+
+## Обзор проекта
+
+Веб-приложение для управления обращениями граждан в Чувашской Республике для политической партии "Новые Люди". Система позволяет гражданам подавать обращения без регистрации, а администраторам и модераторам - управлять этими обращениями через панель управления.
+
+## Текущее состояние (25 ноября 2025)
+
+### Завершенные задачи:
+- ✅ Установлены Python 3.11 и Node.js 20
+- ✅ Создан FastAPI backend с PostgreSQL
+- ✅ Реализована JWT аутентификация с ролями (admin/moderator)
+- ✅ Созданы модели для обращений, категорий, тегов, пользователей, комментариев
+- ✅ Настроен React + Vite + TypeScript frontend
+- ✅ Установлены зависимости: Tailwind CSS, Framer Motion, React Router, axios
+- ✅ Оба сервера запущены и работают
+
+### Следующие шаги:
+- Публичная форма подачи обращений с многоуровневой категоризацией
+- Страница авторизации для администраторов/модераторов
+- Панель модератора для управления обращениями
+- Панель администратора с управлением категориями, тегами, пользователями
+- Интеграция анимаций Framer Motion
+- Интеграция логотипа партии
+
+## Технологический стек
+
+### Backend
+- **Framework**: FastAPI
+- **Database**: PostgreSQL (Neon-hosted)
+- **ORM**: SQLAlchemy
+- **Authentication**: JWT (python-jose, bcrypt)
+- **Validation**: Pydantic
+- **Server**: Uvicorn
+
+### Frontend
+- **Framework**: React 18 + TypeScript
+- **Build Tool**: Vite 7
+- **Styling**: Tailwind CSS
+- **Animations**: Framer Motion
+- **Routing**: React Router DOM
+- **HTTP Client**: axios
+- **Forms**: react-hook-form
+- **File Upload**: react-dropzone
+- **Charts**: Recharts
+
+## Структура проекта
+
+```
+├── backend/
+│   ├── app/
+│   │   ├── core/         # Конфигурация, БД, безопасность
+│   │   ├── models/       # SQLAlchemy модели
+│   │   ├── routers/      # API endpoints
+│   │   ├── schemas/      # Pydantic схемы
+│   │   └── services/     # Бизнес-логика
+│   ├── uploads/          # Загруженные файлы
+│   ├── main.py          # Точка входа FastAPI
+│   ├── init_db.py       # Инициализация БД с тестовыми данными
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── assets/      # Статические файлы
+│   │   ├── App.tsx      # Главный компонент
+│   │   └── main.tsx     # Точка входа
+│   ├── vite.config.ts   # Конфигурация Vite
+│   └── package.json
+└── attached_assets/
+    └── Logo_of_the_New_People_(political_party).svg_1764065114896.png
+```
+
+## API Endpoints
+
+### Authentication
+- `POST /api/auth/login` - Вход в систему (получение JWT токена)
+
+### Appeals (Обращения)
+- `GET /api/appeals` - Получить все обращения (требует аутентификации)
+- `POST /api/appeals` - Создать новое обращение (публичный доступ)
+- `GET /api/appeals/{id}` - Получить обращение по ID
+- `PUT /api/appeals/{id}` - Обновить статус обращения (требует роли)
+- `POST /api/appeals/{id}/comments` - Добавить комментарий
+
+### Categories (Категории)
+- `GET /api/categories` - Получить все категории (иерархическая структура)
+- `POST /api/categories` - Создать категорию (только admin)
+- `PUT /api/categories/{id}` - Обновить категорию (только admin)
+- `DELETE /api/categories/{id}` - Удалить категорию (только admin)
+
+### Tags (Теги)
+- `GET /api/tags` - Получить все теги
+- `POST /api/tags` - Создать тег (только admin)
+- `DELETE /api/tags/{id}` - Удалить тег (только admin)
+
+### Users (Пользователи)
+- `GET /api/users` - Получить всех пользователей (только admin)
+- `POST /api/users` - Создать пользователя (только admin)
+- `DELETE /api/users/{id}` - Удалить пользователя (только admin)
+
+## База данных
+
+### Модели:
+- **User**: Пользователи системы (администраторы и модераторы)
+- **Category**: Иерархические категории обращений
+- **Tag**: Теги для классификации (публичные/внутренние)
+- **Appeal**: Обращения граждан
+- **Comment**: Комментарии к обращениям
+- **AppealTag**: Связь обращений с тегами
+
+## Учетные записи для тестирования
+
+### Администратор
+- Username: `admin`
+- Password: `admin123`
+- Role: admin
+
+### Модератор
+- Username: `moderator`
+- Password: `moderator123`
+- Role: moderator
+
+## Дизайн
+
+### Цветовая схема
+- Основной цвет: **Бирюзовый** (#00C9C8)
+- Дополнительный: **Белый** (#FFFFFF)
+- Акценты: Градиенты бирюзового
+
+### Анимации
+- Fade-in/out эффекты
+- Slide transitions
+- Hover состояния
+- Модальные окна с плавным появлением
+- Smooth transitions на всех элементах
+
+## Переменные окружения
+
+### Backend (.env)
+```
+DATABASE_URL=<PostgreSQL connection string>
+SECRET_KEY=<JWT secret key>
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+```
+
+### Frontend
+Прокси API запросы настроен в `vite.config.ts`:
+- `/api` → `http://127.0.0.1:8000`
+
+## Workflows
+
+### Backend API
+- Команда: `cd backend && uvicorn main:app --host 0.0.0.0 --port 8000 --reload`
+- Порт: 8000
+- Тип: console
+
+### Frontend App
+- Команда: `cd frontend && npm run dev`
+- Порт: 5000
+- Тип: webview (публичный доступ через proxy)
+
+## Безопасность
+
+- JWT токены с bcrypt хэшированием паролей
+- Role-based access control (RBAC)
+- Защищенные роуты требуют аутентификации
+- Административные операции требуют роли admin
+- Загрузка файлов изолирована в `/uploads` с UUID именами
+
+## Рекомендации архитектора
+
+1. Вынести `SECRET_KEY` в переменные окружения для production
+2. Добавить валидацию загружаемых файлов (размер/тип)
+3. Реализовать автоматические API тесты для регрессионного тестирования
+
+## Предпочтения пользователя
+
+- Использование FastAPI обязательно
+- PostgreSQL вместо SQLite3 (из-за DATABASE_URL в окружении)
+- Бирюзово-белая цветовая схема
+- Обширные анимации на всех элементах интерфейса
+- Многоуровневая иерархическая навигация по категориям
