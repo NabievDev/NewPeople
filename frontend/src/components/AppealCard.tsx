@@ -10,10 +10,10 @@ interface AppealCardProps {
 
 const AppealCard: React.FC<AppealCardProps> = ({ appeal, onClick, isSelected }) => {
   const statusColors = {
-    new: 'bg-blue-100 text-blue-800',
-    in_progress: 'bg-yellow-100 text-yellow-800',
-    resolved: 'bg-green-100 text-green-800',
-    rejected: 'bg-red-100 text-red-800',
+    new: 'bg-blue-100 text-blue-800 border-l-4 border-l-blue-500',
+    in_progress: 'bg-yellow-100 text-yellow-800 border-l-4 border-l-yellow-500',
+    resolved: 'bg-green-100 text-green-800 border-l-4 border-l-green-500',
+    rejected: 'bg-red-100 text-red-800 border-l-4 border-l-red-500',
   };
 
   const statusLabels = {
@@ -33,6 +33,15 @@ const AppealCard: React.FC<AppealCardProps> = ({ appeal, onClick, isSelected }) 
     });
   };
 
+  const getContrastColor = (hexColor: string): string => {
+    const hex = hexColor.replace('#', '');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5 ? '#000000' : '#ffffff';
+  };
+
   return (
     <motion.div
       layout
@@ -48,7 +57,7 @@ const AppealCard: React.FC<AppealCardProps> = ({ appeal, onClick, isSelected }) 
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
           <div className="flex items-center space-x-2 mb-2">
-            <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[appeal.status]}`}>
+            <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${statusColors[appeal.status]}`}>
               {statusLabels[appeal.status]}
             </span>
             {appeal.is_anonymous && (
@@ -61,8 +70,11 @@ const AppealCard: React.FC<AppealCardProps> = ({ appeal, onClick, isSelected }) 
             {appeal.author_name || 'Анонимное обращение'}
           </p>
           {appeal.category && (
-            <p className="text-xs text-gray-500 mt-1">
-              Категория: {appeal.category.name}
+            <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+              {appeal.category.name}
             </p>
           )}
         </div>
@@ -71,29 +83,34 @@ const AppealCard: React.FC<AppealCardProps> = ({ appeal, onClick, isSelected }) 
 
       <p className="text-sm text-gray-700 line-clamp-3">{appeal.text}</p>
 
-      {((appeal.public_tags && appeal.public_tags.length > 0) || (appeal.internal_tags && appeal.internal_tags.length > 0)) && (
-        <div className="flex flex-wrap gap-1 mt-3">
-          {appeal.public_tags?.slice(0, 2).map((tag) => (
-            <span
-              key={`public-${tag.id}`}
-              className="px-2 py-0.5 rounded text-xs bg-primary-100 text-primary-800"
-            >
-              {tag.name}
-            </span>
-          ))}
-          {appeal.internal_tags?.slice(0, 2).map((tag) => (
+      {appeal.internal_tags && appeal.internal_tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {appeal.internal_tags.slice(0, 3).map((tag) => (
             <span
               key={`internal-${tag.id}`}
-              className="px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-800"
+              className="px-2 py-0.5 rounded-full text-xs font-medium"
+              style={{ 
+                backgroundColor: tag.color || '#6B7280',
+                color: getContrastColor(tag.color || '#6B7280')
+              }}
             >
               {tag.name}
             </span>
           ))}
-          {((appeal.public_tags?.length || 0) + (appeal.internal_tags?.length || 0)) > 4 && (
-            <span className="px-2 py-0.5 text-xs text-gray-500">
-              +{(appeal.public_tags?.length || 0) + (appeal.internal_tags?.length || 0) - 4}
+          {appeal.internal_tags.length > 3 && (
+            <span className="px-2 py-0.5 text-xs text-gray-500 bg-gray-100 rounded-full">
+              +{appeal.internal_tags.length - 3}
             </span>
           )}
+        </div>
+      )}
+
+      {appeal.comments && appeal.comments.length > 0 && (
+        <div className="flex items-center gap-1 mt-3 text-xs text-gray-500">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+          {appeal.comments.length} комментари{appeal.comments.length === 1 ? 'й' : (appeal.comments.length < 5 ? 'я' : 'ев')}
         </div>
       )}
     </motion.div>

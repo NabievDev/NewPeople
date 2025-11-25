@@ -13,13 +13,12 @@ const ModeratorDashboard: React.FC = () => {
   const [selectedAppeal, setSelectedAppeal] = useState<Appeal | null>(null);
   const [statusFilter, setStatusFilter] = useState<Appeal['status'] | 'all'>('all');
   const [selectedTagId, setSelectedTagId] = useState<number | null>(null);
-  const [selectedTagType, setSelectedTagType] = useState<'public' | 'internal' | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Appeal[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [loading, setLoading] = useState(true);
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   useEffect(() => {
     loadData();
@@ -42,7 +41,6 @@ const ModeratorDashboard: React.FC = () => {
     }
   };
 
-  // Debounced search
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults(null);
@@ -131,13 +129,11 @@ const ModeratorDashboard: React.FC = () => {
   const clearFilters = () => {
     setStatusFilter('all');
     setSelectedTagId(null);
-    setSelectedTagType(null);
     setSelectedCategoryId(null);
     setSearchQuery('');
     setSearchResults(null);
   };
 
-  // Filter appeals
   const filteredAppeals = useMemo(() => {
     let result = searchResults || appeals;
     
@@ -145,10 +141,9 @@ const ModeratorDashboard: React.FC = () => {
       result = result.filter((a) => a.status === statusFilter);
     }
     
-    if (selectedTagId && selectedTagType) {
+    if (selectedTagId) {
       result = result.filter((a) => {
-        const tagList = selectedTagType === 'public' ? a.public_tags : a.internal_tags;
-        return tagList?.some((t) => t.id === selectedTagId);
+        return a.internal_tags?.some((t) => t.id === selectedTagId);
       });
     }
     
@@ -157,7 +152,7 @@ const ModeratorDashboard: React.FC = () => {
     }
     
     return result;
-  }, [appeals, searchResults, statusFilter, selectedTagId, selectedTagType, selectedCategoryId]);
+  }, [appeals, searchResults, statusFilter, selectedTagId, selectedCategoryId]);
 
   const statusCounts = useMemo(() => ({
     all: appeals.length,
@@ -167,7 +162,6 @@ const ModeratorDashboard: React.FC = () => {
     rejected: appeals.filter((a) => a.status === 'rejected').length,
   }), [appeals]);
 
-  const publicTags = useMemo(() => tags.filter((t) => t.is_public), [tags]);
   const internalTags = useMemo(() => tags.filter((t) => !t.is_public), [tags]);
 
   const flattenCategories = (cats: Category[], prefix = ''): { id: number; name: string }[] => {
@@ -206,6 +200,16 @@ const ModeratorDashboard: React.FC = () => {
               <p className="text-gray-600 mt-1">Управление обращениями граждан</p>
             </div>
             <div className="flex items-center space-x-4">
+              {user?.role === 'admin' && (
+                <motion.button
+                  onClick={() => window.location.href = '/admin'}
+                  className="px-4 py-2 text-sm text-primary hover:text-primary-700 transition-colors font-medium"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  Админ-панель
+                </motion.button>
+              )}
               <motion.button
                 onClick={() => window.location.href = '/'}
                 className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
@@ -225,7 +229,6 @@ const ModeratorDashboard: React.FC = () => {
             </div>
           </motion.div>
 
-          {/* Search */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -238,10 +241,10 @@ const ModeratorDashboard: React.FC = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Поиск по обращениям, авторам, комментариям..."
-                className="input-field w-full pl-10"
+                className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
               />
               <svg
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -254,7 +257,7 @@ const ModeratorDashboard: React.FC = () => {
                 />
               </svg>
               {isSearching && (
-                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
                 </div>
               )}
@@ -275,7 +278,6 @@ const ModeratorDashboard: React.FC = () => {
             )}
           </motion.div>
 
-          {/* Status filters */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -291,11 +293,19 @@ const ModeratorDashboard: React.FC = () => {
                 rejected: 'Отклонённые',
               };
 
+              const colors = {
+                all: '',
+                new: 'border-l-4 border-l-blue-500',
+                in_progress: 'border-l-4 border-l-yellow-500',
+                resolved: 'border-l-4 border-l-green-500',
+                rejected: 'border-l-4 border-l-red-500',
+              };
+
               return (
                 <motion.button
                   key={status}
                   onClick={() => setStatusFilter(status)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${colors[status]} ${
                     statusFilter === status
                       ? 'bg-primary text-white shadow-md'
                       : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
@@ -309,7 +319,6 @@ const ModeratorDashboard: React.FC = () => {
             })}
           </motion.div>
 
-          {/* Filters */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -319,7 +328,7 @@ const ModeratorDashboard: React.FC = () => {
             <select
               value={selectedCategoryId || ''}
               onChange={(e) => setSelectedCategoryId(e.target.value ? parseInt(e.target.value) : null)}
-              className="input-field"
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
             >
               <option value="">Все категории</option>
               {flattenCategories(categories).map((cat) => (
@@ -330,98 +339,84 @@ const ModeratorDashboard: React.FC = () => {
             {(selectedTagId || selectedCategoryId || statusFilter !== 'all') && (
               <button
                 onClick={clearFilters}
-                className="text-sm text-primary hover:underline"
+                className="text-sm text-primary hover:underline flex items-center gap-1"
               >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
                 Сбросить все фильтры
               </button>
             )}
           </motion.div>
 
-          {/* Tags sections */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="mt-4 space-y-3"
-          >
-            {/* Public tags */}
-            {publicTags.length > 0 && (
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Публичные теги:</p>
-                <div className="flex flex-wrap gap-2">
-                  {publicTags.map((tag) => (
-                    <button
-                      key={tag.id}
-                      onClick={() => {
-                        if (selectedTagId === tag.id && selectedTagType === 'public') {
-                          setSelectedTagId(null);
-                          setSelectedTagType(null);
-                        } else {
-                          setSelectedTagId(tag.id);
-                          setSelectedTagType('public');
-                        }
-                      }}
-                      className={`px-3 py-1 rounded-full text-sm transition-all ${
-                        selectedTagId === tag.id && selectedTagType === 'public'
-                          ? 'bg-primary text-white'
-                          : 'bg-primary-100 text-primary-800 hover:bg-primary-200'
-                      }`}
-                    >
-                      {tag.name}
-                    </button>
-                  ))}
-                </div>
+          {internalTags.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="mt-4"
+            >
+              <p className="text-sm font-medium text-gray-700 mb-2">Теги:</p>
+              <div className="flex flex-wrap gap-2">
+                {internalTags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    onClick={() => {
+                      if (selectedTagId === tag.id) {
+                        setSelectedTagId(null);
+                      } else {
+                        setSelectedTagId(tag.id);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${
+                      selectedTagId === tag.id
+                        ? 'text-white shadow-md'
+                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}
+                    style={selectedTagId === tag.id ? { backgroundColor: tag.color || '#6B7280' } : {}}
+                  >
+                    <span 
+                      className="w-2.5 h-2.5 rounded-full" 
+                      style={{ backgroundColor: tag.color || '#6B7280' }}
+                    ></span>
+                    {tag.name}
+                  </button>
+                ))}
               </div>
-            )}
-
-            {/* Internal tags */}
-            {internalTags.length > 0 && (
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Внутренние теги:</p>
-                <div className="flex flex-wrap gap-2">
-                  {internalTags.map((tag) => (
-                    <button
-                      key={tag.id}
-                      onClick={() => {
-                        if (selectedTagId === tag.id && selectedTagType === 'internal') {
-                          setSelectedTagId(null);
-                          setSelectedTagType(null);
-                        } else {
-                          setSelectedTagId(tag.id);
-                          setSelectedTagType('internal');
-                        }
-                      }}
-                      className={`px-3 py-1 rounded-full text-sm transition-all ${
-                        selectedTagId === tag.id && selectedTagType === 'internal'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-purple-100 text-purple-800 hover:bg-purple-200'
-                      }`}
-                    >
-                      {tag.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </motion.div>
+            </motion.div>
+          )}
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Список обращений ({filteredAppeals.length})
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">
+                Список обращений ({filteredAppeals.length})
+              </h2>
+              <button 
+                onClick={loadData}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Обновить список"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
             <AnimatePresence mode="popLayout">
               {filteredAppeals.length === 0 ? (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="text-center py-12 text-gray-500"
+                  className="text-center py-12"
                 >
-                  Нет обращений с выбранными фильтрами
+                  <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-gray-500">Нет обращений с выбранными фильтрами</p>
                 </motion.div>
               ) : (
                 filteredAppeals.map((appeal) => (
@@ -455,10 +450,10 @@ const ModeratorDashboard: React.FC = () => {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="card text-center py-12 text-gray-500"
+                className="card text-center py-16"
               >
                 <svg
-                  className="mx-auto h-12 w-12 text-gray-400 mb-4"
+                  className="mx-auto h-16 w-16 text-gray-300 mb-4"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -470,7 +465,8 @@ const ModeratorDashboard: React.FC = () => {
                     d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                   />
                 </svg>
-                Выберите обращение для просмотра деталей
+                <p className="text-gray-500 text-lg">Выберите обращение для просмотра</p>
+                <p className="text-gray-400 text-sm mt-2">Нажмите на карточку обращения слева</p>
               </motion.div>
             )}
           </div>
