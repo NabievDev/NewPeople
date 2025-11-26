@@ -44,10 +44,16 @@ The system is built as a full-stack web application with a clear separation betw
 ### System Design Choices
 - **Backend**: FastAPI for API development, SQLAlchemy for ORM with Pydantic for data validation.
 - **Frontend**: React 18 + TypeScript, built with Vite 7, styled with Tailwind CSS.
-- **Database**: SQLite for development, with a preference for PostgreSQL in production.
-- **Deployment**: Backend runs on Uvicorn, frontend served via Vite.
+- **Database**: PostgreSQL (Neon-backed) for both development and production via DATABASE_URL.
+- **Deployment**: Backend runs on Uvicorn (port 8000), frontend served via Vite (port 5000), Telegram bot with notification server (port 3001).
 
 ## Recent Changes (November 2025)
+
+### Environment Configuration Fix (November 26, 2025)
+- Updated telegram_bot/database.py to use PostgreSQL via DATABASE_URL instead of SQLite
+- Configured environment variables: TELEGRAM_BOT_TOKEN, WEBAPP_URL, TELEGRAM_BOT_URL
+- Bot @NPChuvBot (id=8341963067) connected and running
+- Notification server properly configured for status change notifications
 
 ### Telegram Bot Integration (November 26, 2025)
 - Added complete Telegram bot microservice using **Aiogram 3.22**
