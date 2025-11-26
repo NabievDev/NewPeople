@@ -49,6 +49,25 @@ The system is built as a full-stack web application with a clear separation betw
 
 ## Recent Changes (November 2025)
 
+### Telegram Bot Integration (November 26, 2025)
+- Added complete Telegram bot microservice using **Aiogram 3.22**
+- Bot provides /start command with mini-app button for submitting appeals
+- Users can view their appeals directly in Telegram via /my_appeals command
+- Backend sends automatic notifications when appeal status changes
+- Frontend detects Telegram Web App environment and auto-populates user data
+- Appeal submissions from Telegram save user's telegram_user_id and telegram_username
+
+#### Bot Structure:
+- telegram_bot/main.py - Main bot entry point with webhook/polling support
+- telegram_bot/handlers.py - Command and callback handlers
+- telegram_bot/keyboards.py - Inline keyboard builders
+- telegram_bot/notification_service.py - HTTP server for receiving status notifications
+
+#### Required Secrets:
+- TELEGRAM_BOT_TOKEN - Bot token from @BotFather (REQUIRED)
+- WEBAPP_URL - URL for mini-app (auto-set to deployment URL)
+- TELEGRAM_BOT_URL - Internal notification URL (auto-set to http://localhost:3001)
+
 ### Drag-and-Drop Functionality
 - Added @dnd-kit library for drag-and-drop functionality (core, sortable, utilities)
 - Categories can be reordered by drag-and-drop in AdminDashboard
