@@ -5,26 +5,13 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { categoriesApi, tagsApi, usersApi, statsApi } from '../services/api';
+import { categoriesApi, tagsApi, usersApi, statsApi, statusesApi } from '../services/api';
+import type { AppealStatusConfig } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { Category, Tag, User, Statistics, TimelineDataPoint, ModeratorStats, AppealsByPeriodStats, TimePeriod } from '../types';
 import LoadingScreen from '../components/LoadingScreen';
 
 type TabType = 'dashboard' | 'categories' | 'users';
-
-interface AppealStatus {
-  id: string;
-  name: string;
-  color: string;
-  description: string;
-}
-
-const defaultStatuses: AppealStatus[] = [
-  { id: 'new', name: 'Новое', color: '#3B82F6', description: 'Обращение только поступило' },
-  { id: 'in_progress', name: 'В работе', color: '#F59E0B', description: 'Обращение находится в обработке' },
-  { id: 'resolved', name: 'Решено', color: '#10B981', description: 'Обращение успешно обработано' },
-  { id: 'rejected', name: 'Отклонено', color: '#EF4444', description: 'Обращение отклонено' },
-];
 
 interface SortableItemProps {
   id: string;
@@ -64,11 +51,8 @@ const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const { logout } = useAuth();
 
-  const [statuses, setStatuses] = useState<AppealStatus[]>(() => {
-    const saved = localStorage.getItem('appealStatuses');
-    return saved ? JSON.parse(saved) : defaultStatuses;
-  });
-  const [editingStatus, setEditingStatus] = useState<AppealStatus | null>(null);
+  const [statusConfigs, setStatusConfigs] = useState<AppealStatusConfig[]>([]);
+  const [editingStatus, setEditingStatus] = useState<AppealStatusConfig | null>(null);
   const [newStatus, setNewStatus] = useState({ name: '', color: '#6B7280', description: '' });
 
   const [newCategory, setNewCategory] = useState({ name: '', parent_id: '' });
@@ -95,10 +79,6 @@ const AdminDashboard: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('appealStatuses', JSON.stringify(statuses));
-  }, [statuses]);
-
-  useEffect(() => {
     const loadAdvancedStats = async () => {
       try {
         const [timeline, moderators, period] = await Promise.all([
@@ -118,16 +98,18 @@ const AdminDashboard: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [statsData, categoriesData, tagsData, usersData] = await Promise.all([
+      const [statsData, categoriesData, tagsData, usersData, statusesData] = await Promise.all([
         statsApi.getAll(),
         categoriesApi.getAll(),
         tagsApi.getAll(),
         usersApi.getAll(),
+        statusesApi.getAll(),
       ]);
       setStats(statsData);
       setCategories(categoriesData);
       setTags(tagsData);
       setUsers(usersData);
+      setStatusConfigs(statusesData);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -258,15 +240,22 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleStatusDragEnd = (event: DragEndEvent) => {
+  const handleStatusDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = statuses.findIndex(s => s.id === active.id);
-    const newIndex = statuses.findIndex(s => s.id === over.id);
+    const oldIndex = statusConfigs.findIndex(s => s.id.toString() === active.id);
+    const newIndex = statusConfigs.findIndex(s => s.id.toString() === over.id);
     
     if (oldIndex !== -1 && newIndex !== -1) {
-      setStatuses(arrayMove(statuses, oldIndex, newIndex));
+      const newOrder = arrayMove(statusConfigs, oldIndex, newIndex);
+      setStatusConfigs(newOrder);
+      try {
+        await statusesApi.reorder(newOrder.map(s => s.id));
+      } catch (error) {
+        console.error('Failed to reorder statuses:', error);
+        loadData();
+      }
     }
   };
 
@@ -301,26 +290,55 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleUpdateStatus = (status: AppealStatus) => {
-    setStatuses(prev => prev.map(s => s.id === status.id ? status : s));
+  const handleUpdateStatus = async (status: AppealStatusConfig) => {
+    const previousStatuses = [...statusConfigs];
+    setStatusConfigs(prev => prev.map(s => s.id === status.id ? status : s));
     setEditingStatus(null);
+    try {
+      await statusesApi.update(status.id, { 
+        name: status.name, 
+        color: status.color, 
+        description: status.description 
+      });
+    } catch (error) {
+      console.error('Failed to update status:', error);
+      setStatusConfigs(previousStatuses);
+    }
   };
 
-  const handleAddStatus = (e: React.FormEvent) => {
+  const handleAddStatus = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStatus.name.trim()) return;
-    const id = newStatus.name.toLowerCase().replace(/\s+/g, '_');
-    setStatuses(prev => [...prev, { ...newStatus, id }]);
-    setNewStatus({ name: '', color: '#6B7280', description: '' });
+    const statusKey = newStatus.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    try {
+      const createdStatus = await statusesApi.create({
+        status_key: statusKey,
+        name: newStatus.name,
+        color: newStatus.color,
+        description: newStatus.description,
+      });
+      setStatusConfigs(prev => [...prev, createdStatus]);
+      setNewStatus({ name: '', color: '#6B7280', description: '' });
+    } catch (error) {
+      console.error('Failed to create status:', error);
+    }
   };
 
-  const handleDeleteStatus = (id: string) => {
-    if (['new', 'in_progress', 'resolved', 'rejected'].includes(id)) {
+  const handleDeleteStatus = async (id: number) => {
+    const status = statusConfigs.find(s => s.id === id);
+    if (status?.is_system) {
       alert('Системные статусы нельзя удалять');
       return;
     }
     if (!confirm('Удалить этот статус?')) return;
-    setStatuses(prev => prev.filter(s => s.id !== id));
+    const previousStatuses = [...statusConfigs];
+    setStatusConfigs(prev => prev.filter(s => s.id !== id));
+    try {
+      await statusesApi.delete(id);
+    } catch (error) {
+      console.error('Failed to delete status:', error);
+      setStatusConfigs(previousStatuses);
+    }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -1425,10 +1443,10 @@ const AdminDashboard: React.FC = () => {
                 </form>
 
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStatusDragEnd}>
-                  <SortableContext items={statuses.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                  <SortableContext items={statusConfigs.map(s => s.id.toString())} strategy={verticalListSortingStrategy}>
                     <div className="space-y-3">
-                      {statuses.map((status) => (
-                        <SortableItem key={status.id} id={status.id}>
+                      {statusConfigs.map((status) => (
+                        <SortableItem key={status.id} id={status.id.toString()}>
                           <motion.div 
                             className="flex items-center justify-between p-4 bg-white rounded-xl border-2 border-gray-100 hover:border-gray-300 transition-all"
                             whileHover={{ scale: 1.01 }}
@@ -1443,7 +1461,7 @@ const AdminDashboard: React.FC = () => {
                                 />
                                 <input
                                   type="text"
-                                  value={editingStatus.description}
+                                  value={editingStatus.description || ''}
                                   onChange={(e) => setEditingStatus({ ...editingStatus, description: e.target.value })}
                                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900"
                                   placeholder="Описание"
@@ -1479,6 +1497,9 @@ const AdminDashboard: React.FC = () => {
                                   ></div>
                                   <div>
                                     <span className="font-medium text-gray-900">{status.name}</span>
+                                    {status.is_system && (
+                                      <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">системный</span>
+                                    )}
                                     <p className="text-sm text-gray-500">{status.description}</p>
                                   </div>
                                 </div>
@@ -1492,7 +1513,7 @@ const AdminDashboard: React.FC = () => {
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                     </svg>
                                   </button>
-                                  {!['new', 'in_progress', 'resolved', 'rejected'].includes(status.id) && (
+                                  {!status.is_system && (
                                     <button
                                       onClick={() => handleDeleteStatus(status.id)}
                                       className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"

@@ -258,4 +258,40 @@ export const statsApi = {
   },
 };
 
+export interface AppealStatusConfig {
+  id: number;
+  status_key: string;
+  name: string;
+  color: string;
+  description?: string;
+  order: number;
+  is_system: boolean;
+  created_at: string;
+}
+
+export const statusesApi = {
+  getAll: async (): Promise<AppealStatusConfig[]> => {
+    const response = await api.get<AppealStatusConfig[]>('/statuses');
+    return response.data;
+  },
+  
+  create: async (data: { status_key: string; name: string; color?: string; description?: string }): Promise<AppealStatusConfig> => {
+    const response = await api.post<AppealStatusConfig>('/statuses', data);
+    return response.data;
+  },
+  
+  update: async (id: number, data: { name?: string; color?: string; description?: string; order?: number }): Promise<AppealStatusConfig> => {
+    const response = await api.patch<AppealStatusConfig>(`/statuses/${id}`, data);
+    return response.data;
+  },
+  
+  reorder: async (statusIds: number[]): Promise<void> => {
+    await api.put('/statuses/reorder', { status_ids: statusIds });
+  },
+  
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/statuses/${id}`);
+  },
+};
+
 export default api;

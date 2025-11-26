@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { appealsApi, tagsApi, categoriesApi } from '../services/api';
+import { appealsApi, tagsApi, categoriesApi, statusesApi } from '../services/api';
+import type { AppealStatusConfig } from '../services/api';
 import type { Appeal, Tag, Category } from '../types';
 import AppealCard from '../components/AppealCard';
 import AppealDetail from '../components/AppealDetail';
@@ -11,8 +12,9 @@ const ModeratorDashboard: React.FC = () => {
   const [appeals, setAppeals] = useState<Appeal[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [statusConfigs, setStatusConfigs] = useState<AppealStatusConfig[]>([]);
   const [selectedAppeal, setSelectedAppeal] = useState<Appeal | null>(null);
-  const [statusFilter, setStatusFilter] = useState<Appeal['status'] | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedTagId, setSelectedTagId] = useState<number | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,14 +41,16 @@ const ModeratorDashboard: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [appealsData, tagsData, categoriesData] = await Promise.all([
+      const [appealsData, tagsData, categoriesData, statusesData] = await Promise.all([
         appealsApi.getAll(),
         tagsApi.getAll(),
         categoriesApi.getAll(),
+        statusesApi.getAll(),
       ]);
       setAppeals(appealsData);
       setTags(tagsData);
       setCategories(categoriesData);
+      setStatusConfigs(statusesData);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -167,13 +171,13 @@ const ModeratorDashboard: React.FC = () => {
     return result;
   }, [appeals, searchResults, statusFilter, selectedTagId, selectedCategoryId]);
 
-  const statusCounts = useMemo(() => ({
-    all: appeals.length,
-    new: appeals.filter((a) => a.status === 'new').length,
-    in_progress: appeals.filter((a) => a.status === 'in_progress').length,
-    resolved: appeals.filter((a) => a.status === 'resolved').length,
-    rejected: appeals.filter((a) => a.status === 'rejected').length,
-  }), [appeals]);
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: appeals.length };
+    statusConfigs.forEach(config => {
+      counts[config.status_key] = appeals.filter((a) => a.status === config.status_key).length;
+    });
+    return counts;
+  }, [appeals, statusConfigs]);
 
   const internalTags = useMemo(() => tags.filter((t) => !t.is_public), [tags]);
 
@@ -290,39 +294,35 @@ const ModeratorDashboard: React.FC = () => {
             transition={{ delay: 0.1 }}
             className="mt-4 flex flex-wrap gap-3"
           >
-            {(['all', 'new', 'in_progress', 'resolved', 'rejected'] as const).map((status) => {
-              const labels = {
-                all: 'Все',
-                new: 'Новые',
-                in_progress: 'В работе',
-                resolved: 'Решённые',
-                rejected: 'Отклонённые',
-              };
-
-              const colors = {
-                all: '',
-                new: 'border-l-4 border-l-blue-500',
-                in_progress: 'border-l-4 border-l-yellow-500',
-                resolved: 'border-l-4 border-l-green-500',
-                rejected: 'border-l-4 border-l-red-500',
-              };
-
-              return (
-                <motion.button
-                  key={status}
-                  onClick={() => setStatusFilter(status)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-all ${colors[status]} ${
-                    statusFilter === status
-                      ? 'bg-primary text-white shadow-md'
-                      : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                  }`}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  {labels[status]} ({statusCounts[status]})
-                </motion.button>
-              );
-            })}
+            <motion.button
+              key="all"
+              onClick={() => setStatusFilter('all')}
+              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                statusFilter === 'all'
+                  ? 'bg-primary text-white shadow-md'
+                  : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+              }`}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Все ({statusCounts.all})
+            </motion.button>
+            {statusConfigs.map((config) => (
+              <motion.button
+                key={config.status_key}
+                onClick={() => setStatusFilter(config.status_key)}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  statusFilter === config.status_key
+                    ? 'bg-primary text-white shadow-md'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+                style={statusFilter !== config.status_key ? { borderLeftWidth: '4px', borderLeftColor: config.color } : {}}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                {config.name} ({statusCounts[config.status_key] || 0})
+              </motion.button>
+            ))}
           </motion.div>
 
           <motion.div

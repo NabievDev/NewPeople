@@ -167,6 +167,34 @@ class TagStatistics(BaseModel):
     count: int
     is_public: bool
 
+
+class AppealStatusConfigBase(BaseModel):
+    status_key: str
+    name: str
+    color: str = "#6B7280"
+    description: Optional[str] = None
+
+class AppealStatusConfigCreate(AppealStatusConfigBase):
+    pass
+
+class AppealStatusConfigUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+    description: Optional[str] = None
+    order: Optional[int] = None
+
+class AppealStatusConfig(AppealStatusConfigBase):
+    id: int
+    order: int
+    is_system: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class StatusReorder(BaseModel):
+    status_ids: List[int]
+
 class Statistics(BaseModel):
     total_appeals: int
     new_appeals: int

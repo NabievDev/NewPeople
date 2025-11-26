@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, Table, Enum
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, Table, Enum, BigInteger
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -13,6 +13,19 @@ class AppealStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
     RESOLVED = "resolved"
     REJECTED = "rejected"
+
+
+class AppealStatusConfig(Base):
+    __tablename__ = "appeal_status_configs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    status_key = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    color = Column(String, default="#6B7280")
+    description = Column(Text, nullable=True)
+    order = Column(Integer, default=0)
+    is_system = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 appeal_public_tags = Table(
     'appeal_public_tags',
@@ -56,6 +69,7 @@ class PublicTag(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     color = Column(String, default="#00C9C8")
+    order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     appeals = relationship("Appeal", secondary=appeal_public_tags, back_populates="public_tags")
@@ -83,6 +97,8 @@ class Appeal(Base):
     text = Column(Text, nullable=False)
     status = Column(Enum(AppealStatus), nullable=False, default=AppealStatus.NEW)
     media_files = Column(Text, nullable=True)
+    telegram_user_id = Column(BigInteger, nullable=True, index=True)
+    telegram_username = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

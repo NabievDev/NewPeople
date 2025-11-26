@@ -2,12 +2,12 @@ from fastapi import FastAPI, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from sqlalchemy import func, distinct
+from sqlalchemy import func, distinct, case, extract
 from datetime import datetime, timedelta
 from typing import List, Literal
 import os
 from app.core.database import engine, Base, get_db
-from app.routers import auth, appeals, categories, tags, users
+from app.routers import auth, appeals, categories, tags, users, statuses
 from app.routers.auth import get_current_user, require_admin
 from app.schemas.schemas import TimelineDataPoint, ModeratorStats, AppealsByPeriodStats
 
@@ -31,6 +31,7 @@ app.include_router(appeals.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
 app.include_router(tags.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
+app.include_router(statuses.router, prefix="/api")
 
 @app.get("/")
 async def root():
@@ -48,64 +49,83 @@ async def get_stats(
     from app.models.models import Appeal, appeal_internal_tags, appeal_public_tags, InternalTag, PublicTag, AppealStatus
     from app.schemas.schemas import Statistics, TagStatistics
     
-    total_appeals = db.query(Appeal).count()
-    new_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.NEW).count()
-    in_progress_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.IN_PROGRESS).count()
-    resolved_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.RESOLVED).count()
-    rejected_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.REJECTED).count()
+    status_counts = db.query(
+        Appeal.status,
+        func.count(Appeal.id).label('count')
+    ).group_by(Appeal.status).all()
     
-    public_tag_stats = []
-    public_tags = db.query(PublicTag).all()
-    for tag in public_tags:
-        count = db.query(appeal_public_tags).filter(appeal_public_tags.c.tag_id == tag.id).count()
-        public_tag_stats.append(TagStatistics(
-            tag_id=tag.id,
-            tag_name=tag.name,
+    status_map = {status: count for status, count in status_counts}
+    total_appeals = sum(status_map.values())
+    new_appeals = status_map.get(AppealStatus.NEW, 0)
+    in_progress_appeals = status_map.get(AppealStatus.IN_PROGRESS, 0)
+    resolved_appeals = status_map.get(AppealStatus.RESOLVED, 0)
+    rejected_appeals = status_map.get(AppealStatus.REJECTED, 0)
+    
+    public_tag_counts = db.query(
+        PublicTag.id,
+        PublicTag.name,
+        func.count(appeal_public_tags.c.appeal_id).label('count')
+    ).outerjoin(
+        appeal_public_tags,
+        PublicTag.id == appeal_public_tags.c.tag_id
+    ).group_by(PublicTag.id, PublicTag.name).all()
+    
+    public_tag_stats = [
+        TagStatistics(
+            tag_id=tag_id,
+            tag_name=tag_name,
             count=count,
             is_public=True
-        ))
+        )
+        for tag_id, tag_name, count in public_tag_counts
+    ]
     
-    internal_tag_stats = []
-    internal_tags = db.query(InternalTag).all()
-    for tag in internal_tags:
-        count = db.query(appeal_internal_tags).filter(appeal_internal_tags.c.tag_id == tag.id).count()
-        internal_tag_stats.append(TagStatistics(
-            tag_id=tag.id,
-            tag_name=tag.name,
+    internal_tag_counts = db.query(
+        InternalTag.id,
+        InternalTag.name,
+        func.count(appeal_internal_tags.c.appeal_id).label('count')
+    ).outerjoin(
+        appeal_internal_tags,
+        InternalTag.id == appeal_internal_tags.c.tag_id
+    ).group_by(InternalTag.id, InternalTag.name).all()
+    
+    internal_tag_stats = [
+        TagStatistics(
+            tag_id=tag_id,
+            tag_name=tag_name,
             count=count,
             is_public=False
-        ))
+        )
+        for tag_id, tag_name, count in internal_tag_counts
+    ]
     
-    resolved_or_rejected = db.query(Appeal).filter(
-        Appeal.status.in_([AppealStatus.RESOLVED, AppealStatus.REJECTED])
-    ).all()
+    avg_result = db.query(
+        func.avg(
+            extract('epoch', Appeal.updated_at) - extract('epoch', Appeal.created_at)
+        ).label('avg_seconds')
+    ).filter(
+        Appeal.status.in_([AppealStatus.RESOLVED, AppealStatus.REJECTED]),
+        Appeal.created_at.isnot(None),
+        Appeal.updated_at.isnot(None)
+    ).scalar()
     
     average_resolution_time = None
-    if resolved_or_rejected:
-        total_seconds = 0
-        count = 0
-        for appeal in resolved_or_rejected:
-            if appeal.created_at and appeal.updated_at:
-                diff = appeal.updated_at - appeal.created_at
-                total_seconds += diff.total_seconds()
-                count += 1
+    if avg_result is not None:
+        avg_seconds = float(avg_result)
+        weeks = int(avg_seconds // (7 * 24 * 3600))
+        remaining = avg_seconds % (7 * 24 * 3600)
+        days = int(remaining // (24 * 3600))
+        remaining = remaining % (24 * 3600)
+        hours = int(remaining // 3600)
+        remaining = remaining % 3600
+        minutes = int(remaining // 60)
         
-        if count > 0:
-            avg_seconds = total_seconds / count
-            weeks = int(avg_seconds // (7 * 24 * 3600))
-            remaining = avg_seconds % (7 * 24 * 3600)
-            days = int(remaining // (24 * 3600))
-            remaining = remaining % (24 * 3600)
-            hours = int(remaining // 3600)
-            remaining = remaining % 3600
-            minutes = int(remaining // 60)
-            
-            average_resolution_time = {
-                "weeks": weeks,
-                "days": days,
-                "hours": hours,
-                "minutes": minutes
-            }
+        average_resolution_time = {
+            "weeks": weeks,
+            "days": days,
+            "hours": hours,
+            "minutes": minutes
+        }
     
     return Statistics(
         total_appeals=total_appeals,
@@ -133,13 +153,21 @@ async def get_appeals_timeline(
     
     if period == "hour":
         start_time = now - timedelta(hours=24)
+        counts = db.query(
+            func.date_trunc('hour', Appeal.created_at).label('hour'),
+            func.count(Appeal.id).label('count')
+        ).filter(
+            Appeal.created_at >= start_time,
+            Appeal.created_at < now
+        ).group_by(
+            func.date_trunc('hour', Appeal.created_at)
+        ).all()
+        
+        count_map = {row.hour: row.count for row in counts}
         for i in range(24):
             hour_start = start_time + timedelta(hours=i)
-            hour_end = hour_start + timedelta(hours=1)
-            count = db.query(Appeal).filter(
-                Appeal.created_at >= hour_start,
-                Appeal.created_at < hour_end
-            ).count()
+            hour_start = hour_start.replace(minute=0, second=0, microsecond=0)
+            count = count_map.get(hour_start, 0)
             result.append(TimelineDataPoint(
                 date=hour_start.strftime("%Y-%m-%d %H:%M"),
                 count=count,
@@ -149,13 +177,20 @@ async def get_appeals_timeline(
     elif period == "day":
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         current_hour = now.hour + 1
+        counts = db.query(
+            func.date_trunc('hour', Appeal.created_at).label('hour'),
+            func.count(Appeal.id).label('count')
+        ).filter(
+            Appeal.created_at >= today_start,
+            Appeal.created_at < now
+        ).group_by(
+            func.date_trunc('hour', Appeal.created_at)
+        ).all()
+        
+        count_map = {row.hour: row.count for row in counts}
         for i in range(current_hour):
             hour_start = today_start + timedelta(hours=i)
-            hour_end = hour_start + timedelta(hours=1)
-            count = db.query(Appeal).filter(
-                Appeal.created_at >= hour_start,
-                Appeal.created_at < hour_end
-            ).count()
+            count = count_map.get(hour_start, 0)
             result.append(TimelineDataPoint(
                 date=hour_start.strftime("%Y-%m-%d %H:%M"),
                 count=count,
@@ -165,13 +200,20 @@ async def get_appeals_timeline(
     elif period == "week":
         start_time = now - timedelta(days=7)
         start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        counts = db.query(
+            func.date_trunc('day', Appeal.created_at).label('day'),
+            func.count(Appeal.id).label('count')
+        ).filter(
+            Appeal.created_at >= start_time,
+            Appeal.created_at < now
+        ).group_by(
+            func.date_trunc('day', Appeal.created_at)
+        ).all()
+        
+        count_map = {row.day.date(): row.count for row in counts}
         for i in range(7):
             day_start = start_time + timedelta(days=i)
-            day_end = day_start + timedelta(days=1)
-            count = db.query(Appeal).filter(
-                Appeal.created_at >= day_start,
-                Appeal.created_at < day_end
-            ).count()
+            count = count_map.get(day_start.date(), 0)
             result.append(TimelineDataPoint(
                 date=day_start.strftime("%Y-%m-%d"),
                 count=count,
@@ -181,13 +223,20 @@ async def get_appeals_timeline(
     elif period == "month":
         start_time = now - timedelta(days=30)
         start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        counts = db.query(
+            func.date_trunc('day', Appeal.created_at).label('day'),
+            func.count(Appeal.id).label('count')
+        ).filter(
+            Appeal.created_at >= start_time,
+            Appeal.created_at < now
+        ).group_by(
+            func.date_trunc('day', Appeal.created_at)
+        ).all()
+        
+        count_map = {row.day.date(): row.count for row in counts}
         for i in range(30):
             day_start = start_time + timedelta(days=i)
-            day_end = day_start + timedelta(days=1)
-            count = db.query(Appeal).filter(
-                Appeal.created_at >= day_start,
-                Appeal.created_at < day_end
-            ).count()
+            count = count_map.get(day_start.date(), 0)
             result.append(TimelineDataPoint(
                 date=day_start.strftime("%Y-%m-%d"),
                 count=count,
@@ -195,6 +244,18 @@ async def get_appeals_timeline(
             ))
     
     elif period == "year":
+        counts = db.query(
+            extract('year', Appeal.created_at).label('year'),
+            extract('month', Appeal.created_at).label('month'),
+            func.count(Appeal.id).label('count')
+        ).filter(
+            Appeal.created_at >= datetime(now.year - 1, now.month + 1 if now.month < 12 else 1, 1) if now.month < 12 else datetime(now.year - 1, 1, 1)
+        ).group_by(
+            extract('year', Appeal.created_at),
+            extract('month', Appeal.created_at)
+        ).all()
+        
+        count_map = {(int(row.year), int(row.month)): row.count for row in counts}
         for i in range(12):
             month_offset = 11 - i
             year = now.year
@@ -203,14 +264,7 @@ async def get_appeals_timeline(
                 month += 12
                 year -= 1
             month_start = datetime(year, month, 1)
-            if month == 12:
-                month_end = datetime(year + 1, 1, 1)
-            else:
-                month_end = datetime(year, month + 1, 1)
-            count = db.query(Appeal).filter(
-                Appeal.created_at >= month_start,
-                Appeal.created_at < month_end
-            ).count()
+            count = count_map.get((year, month), 0)
             result.append(TimelineDataPoint(
                 date=month_start.strftime("%Y-%m"),
                 count=count,
@@ -224,24 +278,30 @@ async def get_appeals_timeline(
         else:
             start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         
+        counts = db.query(
+            extract('year', Appeal.created_at).label('year'),
+            extract('month', Appeal.created_at).label('month'),
+            func.count(Appeal.id).label('count')
+        ).group_by(
+            extract('year', Appeal.created_at),
+            extract('month', Appeal.created_at)
+        ).all()
+        
+        count_map = {(int(row.year), int(row.month)): row.count for row in counts}
         current_date = start_date
         while current_date <= now:
             year = current_date.year
             month = current_date.month
-            if month == 12:
-                month_end = datetime(year + 1, 1, 1)
-            else:
-                month_end = datetime(year, month + 1, 1)
-            count = db.query(Appeal).filter(
-                Appeal.created_at >= current_date,
-                Appeal.created_at < month_end
-            ).count()
+            count = count_map.get((year, month), 0)
             result.append(TimelineDataPoint(
                 date=current_date.strftime("%Y-%m"),
                 count=count,
                 label=current_date.strftime("%b %Y")
             ))
-            current_date = month_end
+            if month == 12:
+                current_date = datetime(year + 1, 1, 1)
+            else:
+                current_date = datetime(year, month + 1, 1)
     
     return result
 
@@ -253,32 +313,47 @@ async def get_moderator_stats(
 ):
     from app.models.models import User, UserRole, AppealHistory
     from app.schemas.schemas import ModeratorStats
+    from sqlalchemy.orm import aliased
     
-    moderators = db.query(User).filter(
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    total_subq = db.query(
+        AppealHistory.user_id,
+        func.count(distinct(AppealHistory.appeal_id)).label('total_processed')
+    ).group_by(AppealHistory.user_id).subquery()
+    
+    today_subq = db.query(
+        AppealHistory.user_id,
+        func.count(distinct(AppealHistory.appeal_id)).label('today_processed')
+    ).filter(
+        AppealHistory.created_at >= today_start
+    ).group_by(AppealHistory.user_id).subquery()
+    
+    moderator_stats = db.query(
+        User.id,
+        User.username,
+        User.email,
+        func.coalesce(total_subq.c.total_processed, 0).label('total_processed'),
+        func.coalesce(today_subq.c.today_processed, 0).label('today_processed')
+    ).outerjoin(
+        total_subq, User.id == total_subq.c.user_id
+    ).outerjoin(
+        today_subq, User.id == today_subq.c.user_id
+    ).filter(
         User.role.in_([UserRole.MODERATOR, UserRole.ADMIN]),
         User.is_active == True
     ).all()
     
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    result = []
-    for mod in moderators:
-        total_processed = db.query(distinct(AppealHistory.appeal_id)).filter(
-            AppealHistory.user_id == mod.id
-        ).count()
-        
-        today_processed = db.query(distinct(AppealHistory.appeal_id)).filter(
-            AppealHistory.user_id == mod.id,
-            AppealHistory.created_at >= today_start
-        ).count()
-        
-        result.append(ModeratorStats(
-            id=mod.id,
-            username=mod.username,
-            email=mod.email or "",
-            total_processed=total_processed,
-            today_processed=today_processed
-        ))
+    result = [
+        ModeratorStats(
+            id=row.id,
+            username=row.username,
+            email=row.email or "",
+            total_processed=row.total_processed,
+            today_processed=row.today_processed
+        )
+        for row in moderator_stats
+    ]
     
     return result
 
@@ -307,20 +382,23 @@ async def get_appeals_by_period(
     else:
         start_time = None
     
-    base_query = db.query(Appeal)
-    if start_time:
-        base_query = base_query.filter(Appeal.created_at >= start_time)
+    query = db.query(
+        func.count(Appeal.id).label('total'),
+        func.count(case((Appeal.status == AppealStatus.NEW, 1))).label('new'),
+        func.count(case((Appeal.status == AppealStatus.IN_PROGRESS, 1))).label('in_progress'),
+        func.count(case((Appeal.status == AppealStatus.RESOLVED, 1))).label('resolved'),
+        func.count(case((Appeal.status == AppealStatus.REJECTED, 1))).label('rejected')
+    )
     
-    total = base_query.count()
-    new_count = base_query.filter(Appeal.status == AppealStatus.NEW).count()
-    in_progress = base_query.filter(Appeal.status == AppealStatus.IN_PROGRESS).count()
-    resolved = base_query.filter(Appeal.status == AppealStatus.RESOLVED).count()
-    rejected = base_query.filter(Appeal.status == AppealStatus.REJECTED).count()
+    if start_time:
+        query = query.filter(Appeal.created_at >= start_time)
+    
+    result = query.one()
     
     return AppealsByPeriodStats(
-        total=total,
-        new=new_count,
-        in_progress=in_progress,
-        resolved=resolved,
-        rejected=rejected
+        total=result.total,
+        new=result.new,
+        in_progress=result.in_progress,
+        resolved=result.resolved,
+        rejected=result.rejected
     )
