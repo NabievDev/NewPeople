@@ -5,12 +5,20 @@ from datetime import datetime
 import enum
 import os
 
-DATABASE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", "citizens_appeals.db")
-DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+if not DATABASE_URL:
+    raise Exception("DATABASE_URL environment variable is not set!")
+
+connect_args = {}
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args=connect_args,
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=1800,
     pool_pre_ping=True,
 )
 

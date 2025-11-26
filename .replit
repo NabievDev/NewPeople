@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "python-3.11", "web"]
+modules = ["nodejs-20", "python-3.11", "web", "postgresql-16"]
 [agent]
 expertMode = true
 
@@ -83,6 +83,10 @@ localPort = 35517
 externalPort = 3000
 
 [[ports]]
+localPort = 36441
+externalPort = 6000
+
+[[ports]]
 localPort = 40673
 externalPort = 5000
 
@@ -105,6 +109,7 @@ packages = ["cargo", "libiconv", "libxcrypt", "rustc"]
 [userenv]
 
 [userenv.shared]
-WEBAPP_URL = "https://f8030ec1-f67d-426c-b5f0-fc398a7d0cf2-00-3fmvqn9ta69ox.spock.replit.dev"
+WEBAPP_URL = "https://e56c34b0-405b-4df3-9e6c-29b3ce4fa125-00-m10051e6buzq.spock.replit.dev"
 TELEGRAM_BOT_URL = "http://localhost:3001"
 NOTIFY_SECRET = "J0C3ifxeuJIvBRmQjSG1mFMMfilXYtLuGG1BwfyHalk"
+TELEGRAM_BOT_TOKEN = "8341963067:AAEvJ_zi0RaXKiSjE9yVLGpeOtLjUAtpG08"
