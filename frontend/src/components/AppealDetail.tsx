@@ -203,6 +203,12 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
   };
 
   useEffect(() => {
+    setComments([]);
+    setHistory([]);
+    setActiveTab('details');
+  }, [appeal.id]);
+
+  useEffect(() => {
     if (activeTab === 'history') {
       loadHistory();
     }

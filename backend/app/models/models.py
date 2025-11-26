@@ -66,6 +66,7 @@ class InternalTag(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     color = Column(String, default="#6B7280")
+    order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     appeals = relationship("Appeal", secondary=appeal_internal_tags, back_populates="internal_tags")

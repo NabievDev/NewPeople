@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { categoriesApi, tagsApi, usersApi, statsApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { Category, Tag, User, Statistics } from '../types';
 
-type TabType = 'dashboard' | 'categories' | 'users' | 'settings';
+type TabType = 'dashboard' | 'categories' | 'users';
 
 interface AppealStatus {
   id: string;
@@ -21,6 +25,35 @@ const defaultStatuses: AppealStatus[] = [
   { id: 'rejected', name: 'Отклонено', color: '#EF4444', description: 'Обращение отклонено' },
 ];
 
+interface SortableItemProps {
+  id: string;
+  children: React.ReactNode;
+}
+
+const SortableItem: React.FC<SortableItemProps> = ({ id, children }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    cursor: 'grab',
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
+    </div>
+  );
+};
+
+interface FlatCategory {
+  id: number;
+  name: string;
+  level: number;
+  parentId: number | null;
+  order: number;
+}
+
 const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [stats, setStats] = useState<Statistics | null>(null);
@@ -35,26 +68,20 @@ const AdminDashboard: React.FC = () => {
     return saved ? JSON.parse(saved) : defaultStatuses;
   });
   const [editingStatus, setEditingStatus] = useState<AppealStatus | null>(null);
+  const [newStatus, setNewStatus] = useState({ name: '', color: '#6B7280', description: '' });
 
   const [newCategory, setNewCategory] = useState({ name: '', parent_id: '' });
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [newTag, setNewTag] = useState({ name: '', color: '#00C9C8' });
+  const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: 'moderator' as 'admin' | 'moderator' });
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [parentCategoryDropdownOpen, setParentCategoryDropdownOpen] = useState(false);
 
-  const [systemSettings, setSystemSettings] = useState({
-    siteName: 'Обращения к партии "Новые Люди"',
-    notificationEmail: '',
-    autoAssign: false,
-    emailNotifications: true,
-    smsNotifications: false,
-    workingHoursStart: '09:00',
-    workingHoursEnd: '18:00',
-    maxFileSize: 10,
-    allowedFileTypes: 'pdf,doc,docx,jpg,png,mp4',
-    autoCloseResolved: 7,
-    requirePhoneNumber: false,
-  });
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   useEffect(() => {
     loadData();
@@ -106,6 +133,7 @@ const AdminDashboard: React.FC = () => {
         parent_id: newCategory.parent_id ? parseInt(newCategory.parent_id) : undefined,
       });
       setNewCategory({ name: '', parent_id: '' });
+      setParentCategoryDropdownOpen(false);
       loadData();
     } catch (error) {
       console.error('Failed to create category:', error);
@@ -145,6 +173,18 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleUpdateTag = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTag) return;
+    try {
+      await tagsApi.updateInternal(editingTag.id, { name: editingTag.name, color: editingTag.color });
+      setEditingTag(null);
+      loadData();
+    } catch (error) {
+      console.error('Failed to update tag:', error);
+    }
+  };
+
   const handleDeleteTag = async (tag: Tag) => {
     if (!confirm('Удалить этот тег?')) return;
     try {
@@ -155,9 +195,88 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleTagDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = internalTags.findIndex(t => t.id.toString() === active.id);
+    const newIndex = internalTags.findIndex(t => t.id.toString() === over.id);
+    
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(internalTags, oldIndex, newIndex);
+      setTags(prev => [...prev.filter(t => t.is_public), ...newOrder]);
+      try {
+        await tagsApi.reorderInternal(newOrder.map(t => t.id));
+      } catch (error) {
+        console.error('Failed to reorder tags:', error);
+        loadData();
+      }
+    }
+  };
+
+  const handleStatusDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = statuses.findIndex(s => s.id === active.id);
+    const newIndex = statuses.findIndex(s => s.id === over.id);
+    
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setStatuses(arrayMove(statuses, oldIndex, newIndex));
+    }
+  };
+
+  const handleCategoryDragEnd = async (event: DragEndEvent, parentId: number | null) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const cats = parentId === null 
+      ? categories 
+      : categories.find(c => c.id === parentId)?.subcategories || [];
+    
+    const oldIndex = cats.findIndex(c => c.id.toString() === active.id);
+    const newIndex = cats.findIndex(c => c.id.toString() === over.id);
+    
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(cats, oldIndex, newIndex);
+      
+      if (parentId === null) {
+        setCategories(newOrder);
+      } else {
+        setCategories(prev => prev.map(c => 
+          c.id === parentId ? { ...c, subcategories: newOrder } : c
+        ));
+      }
+      
+      try {
+        await categoriesApi.reorder(newOrder.map(c => c.id), parentId ?? undefined);
+      } catch (error) {
+        console.error('Failed to reorder categories:', error);
+        loadData();
+      }
+    }
+  };
+
   const handleUpdateStatus = (status: AppealStatus) => {
     setStatuses(prev => prev.map(s => s.id === status.id ? status : s));
     setEditingStatus(null);
+  };
+
+  const handleAddStatus = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStatus.name.trim()) return;
+    const id = newStatus.name.toLowerCase().replace(/\s+/g, '_');
+    setStatuses(prev => [...prev, { ...newStatus, id }]);
+    setNewStatus({ name: '', color: '#6B7280', description: '' });
+  };
+
+  const handleDeleteStatus = (id: string) => {
+    if (['new', 'in_progress', 'resolved', 'rejected'].includes(id)) {
+      alert('Системные статусы нельзя удалять');
+      return;
+    }
+    if (!confirm('Удалить этот статус?')) return;
+    setStatuses(prev => prev.filter(s => s.id !== id));
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -198,16 +317,11 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleSaveSettings = () => {
-    localStorage.setItem('systemSettings', JSON.stringify(systemSettings));
-    alert('Настройки сохранены!');
-  };
-
-  const flattenCategories = (cats: Category[], prefix = ''): { id: number; name: string; level: number }[] => {
-    let result: { id: number; name: string; level: number }[] = [];
+  const flattenCategories = (cats: Category[], prefix = ''): FlatCategory[] => {
+    let result: FlatCategory[] = [];
     for (const cat of cats) {
       const level = prefix.split('—').length - 1;
-      result.push({ id: cat.id, name: prefix + cat.name, level });
+      result.push({ id: cat.id, name: prefix + cat.name, level, parentId: cat.parent_id || null, order: cat.order || 0 });
       if (cat.subcategories && cat.subcategories.length > 0) {
         result = result.concat(flattenCategories(cat.subcategories, prefix + '— '));
       }
@@ -225,7 +339,7 @@ const AdminDashboard: React.FC = () => {
     ].filter(item => item.value > 0);
   };
 
-  const internalTags = tags.filter(t => !t.is_public);
+  const internalTags = tags.filter(t => !t.is_public).sort((a, b) => (a.order || 0) - (b.order || 0));
 
   if (loading) {
     return (
@@ -294,12 +408,6 @@ const AdminDashboard: React.FC = () => {
               { id: 'users', label: 'Пользователи', icon: (
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              )},
-              { id: 'settings', label: 'Настройки', icon: (
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               )},
             ].map((tab) => (
@@ -611,7 +719,7 @@ const AdminDashboard: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-xl font-bold text-gray-900">Категории обращений</h3>
-                    <p className="text-sm text-gray-500">Управляйте категориями для классификации обращений</p>
+                    <p className="text-sm text-gray-500">Перетаскивайте для изменения порядка</p>
                   </div>
                 </div>
 
@@ -629,18 +737,59 @@ const AdminDashboard: React.FC = () => {
                         required
                       />
                     </div>
-                    <div className="md:w-64">
+                    <div className="md:w-72 relative">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Родительская категория</label>
-                      <select
-                        value={newCategory.parent_id}
-                        onChange={(e) => setNewCategory({ ...newCategory, parent_id: e.target.value })}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-gray-900 bg-white"
-                      >
-                        <option value="">Нет (корневая)</option>
-                        {flattenCategories(categories).map((cat) => (
-                          <option key={cat.id} value={cat.id}>{cat.name}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setParentCategoryDropdownOpen(!parentCategoryDropdownOpen)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-gray-900 bg-white text-left flex items-center justify-between"
+                        >
+                          <span className={newCategory.parent_id ? 'text-gray-900' : 'text-gray-500'}>
+                            {newCategory.parent_id 
+                              ? flattenCategories(categories).find(c => c.id.toString() === newCategory.parent_id)?.name || 'Выберите категорию'
+                              : 'Нет (корневая)'}
+                          </span>
+                          <svg className={`w-5 h-5 text-gray-400 transition-transform ${parentCategoryDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        <AnimatePresence>
+                          {parentCategoryDropdownOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className="absolute z-50 mt-2 w-full bg-white rounded-xl shadow-xl border border-gray-200 max-h-64 overflow-y-auto"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNewCategory({ ...newCategory, parent_id: '' });
+                                  setParentCategoryDropdownOpen(false);
+                                }}
+                                className="w-full px-4 py-3 text-left hover:bg-primary-50 transition-colors text-gray-700 font-medium border-b border-gray-100"
+                              >
+                                Нет (корневая категория)
+                              </button>
+                              {flattenCategories(categories).filter(c => c.level === 0).map((cat) => (
+                                <button
+                                  key={cat.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewCategory({ ...newCategory, parent_id: cat.id.toString() });
+                                    setParentCategoryDropdownOpen(false);
+                                  }}
+                                  className="w-full px-4 py-3 text-left hover:bg-primary-50 transition-colors flex items-center gap-2"
+                                >
+                                  <div className="w-2 h-2 rounded-full bg-primary"></div>
+                                  <span className="text-gray-900">{cat.name}</span>
+                                </button>
+                              ))}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
                     </div>
                     <div className="flex items-end">
                       <button type="submit" className="btn-primary whitespace-nowrap">
@@ -653,70 +802,133 @@ const AdminDashboard: React.FC = () => {
                   </div>
                 </form>
 
-                <div className="space-y-2">
-                  {flattenCategories(categories).map((cat) => (
-                    <motion.div 
-                      key={cat.id} 
-                      className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
-                        cat.level === 0 
-                          ? 'bg-white border-gray-200 hover:border-primary-300' 
-                          : 'bg-gray-50 border-gray-100 hover:border-gray-300 ml-6'
-                      }`}
-                      whileHover={{ scale: 1.01 }}
-                    >
-                      {editingCategory?.id === cat.id ? (
-                        <form onSubmit={handleUpdateCategory} className="flex gap-3 flex-1 items-center">
-                          <input
-                            type="text"
-                            value={editingCategory.name}
-                            onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
-                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
-                          />
-                          <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                            Сохранить
-                          </button>
-                          <button type="button" onClick={() => setEditingCategory(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
-                            Отмена
-                          </button>
-                        </form>
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-3">
-                            <div className={`w-2 h-2 rounded-full ${cat.level === 0 ? 'bg-primary' : 'bg-gray-400'}`}></div>
-                            <span className={`${cat.level === 0 ? 'font-medium text-gray-900' : 'text-gray-700'}`}>
-                              {cat.name.replace(/^—\s*/g, '')}
-                            </span>
-                            {cat.level > 0 && (
-                              <span className="text-xs text-gray-400">подкатегория</span>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => {
-                                const original = categories.find(c => c.id === cat.id);
-                                if (original) setEditingCategory(original as Category);
-                              }}
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Редактировать"
+                <div className="space-y-4">
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleCategoryDragEnd(e, null)}>
+                    <SortableContext items={categories.map(c => c.id.toString())} strategy={verticalListSortingStrategy}>
+                      {categories.map((cat) => (
+                        <div key={cat.id}>
+                          <SortableItem id={cat.id.toString()}>
+                            <motion.div 
+                              className="flex items-center justify-between p-4 rounded-xl border-2 bg-white border-gray-200 hover:border-primary-300 transition-all"
+                              whileHover={{ scale: 1.01 }}
                             >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCategory(cat.id)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Удалить"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </motion.div>
-                  ))}
+                              {editingCategory?.id === cat.id ? (
+                                <form onSubmit={handleUpdateCategory} className="flex gap-3 flex-1 items-center">
+                                  <input
+                                    type="text"
+                                    value={editingCategory.name}
+                                    onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
+                                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
+                                  />
+                                  <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                    Сохранить
+                                  </button>
+                                  <button type="button" onClick={() => setEditingCategory(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                                    Отмена
+                                  </button>
+                                </form>
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-3">
+                                    <svg className="w-5 h-5 text-gray-400 cursor-grab" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                    </svg>
+                                    <div className="w-2 h-2 rounded-full bg-primary"></div>
+                                    <span className="font-medium text-gray-900">{cat.name}</span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => setEditingCategory(cat)}
+                                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                      title="Редактировать"
+                                    >
+                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteCategory(cat.id)}
+                                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                      title="Удалить"
+                                    >
+                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </motion.div>
+                          </SortableItem>
+                          
+                          {cat.subcategories && cat.subcategories.length > 0 && (
+                            <div className="ml-8 mt-2 space-y-2">
+                              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleCategoryDragEnd(e, cat.id)}>
+                                <SortableContext items={cat.subcategories.map(c => c.id.toString())} strategy={verticalListSortingStrategy}>
+                                  {cat.subcategories.map((subcat) => (
+                                    <SortableItem key={subcat.id} id={subcat.id.toString()}>
+                                      <motion.div 
+                                        className="flex items-center justify-between p-3 rounded-lg border bg-gray-50 border-gray-100 hover:border-gray-300 transition-all"
+                                        whileHover={{ scale: 1.01 }}
+                                      >
+                                        {editingCategory?.id === subcat.id ? (
+                                          <form onSubmit={handleUpdateCategory} className="flex gap-3 flex-1 items-center">
+                                            <input
+                                              type="text"
+                                              value={editingCategory.name}
+                                              onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
+                                              className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white text-sm"
+                                            />
+                                            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+                                              Сохранить
+                                            </button>
+                                            <button type="button" onClick={() => setEditingCategory(null)} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm">
+                                              Отмена
+                                            </button>
+                                          </form>
+                                        ) : (
+                                          <>
+                                            <div className="flex items-center gap-3">
+                                              <svg className="w-4 h-4 text-gray-300 cursor-grab" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                              </svg>
+                                              <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
+                                              <span className="text-gray-700 text-sm">{subcat.name}</span>
+                                              <span className="text-xs text-gray-400">подкатегория</span>
+                                            </div>
+                                            <div className="flex gap-1">
+                                              <button
+                                                onClick={() => setEditingCategory(subcat)}
+                                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                title="Редактировать"
+                                              >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                </svg>
+                                              </button>
+                                              <button
+                                                onClick={() => handleDeleteCategory(subcat.id)}
+                                                className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                title="Удалить"
+                                              >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                              </button>
+                                            </div>
+                                          </>
+                                        )}
+                                      </motion.div>
+                                    </SortableItem>
+                                  ))}
+                                </SortableContext>
+                              </DndContext>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 </div>
               </div>
 
@@ -729,7 +941,7 @@ const AdminDashboard: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-xl font-bold text-gray-900">Теги</h3>
-                    <p className="text-sm text-gray-500">Внутренние теги для организации работы</p>
+                    <p className="text-sm text-gray-500">Перетаскивайте для изменения порядка</p>
                   </div>
                 </div>
 
@@ -768,32 +980,80 @@ const AdminDashboard: React.FC = () => {
                   </div>
                 </form>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {internalTags.map((tag) => (
-                    <motion.div 
-                      key={tag.id} 
-                      className="flex items-center justify-between p-4 bg-white rounded-xl border-2 border-gray-100 hover:border-gray-300 transition-all"
-                      whileHover={{ scale: 1.02 }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="w-4 h-4 rounded-full" 
-                          style={{ backgroundColor: tag.color || '#6B7280' }}
-                        ></div>
-                        <span className="font-medium text-gray-900">{tag.name}</span>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteTag(tag)}
-                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Удалить"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </motion.div>
-                  ))}
-                </div>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTagDragEnd}>
+                  <SortableContext items={internalTags.map(t => t.id.toString())} strategy={verticalListSortingStrategy}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {internalTags.map((tag) => (
+                        <SortableItem key={tag.id} id={tag.id.toString()}>
+                          <motion.div 
+                            className="flex items-center justify-between p-4 bg-white rounded-xl border-2 border-gray-100 hover:border-gray-300 transition-all"
+                            whileHover={{ scale: 1.02 }}
+                          >
+                            {editingTag?.id === tag.id ? (
+                              <form onSubmit={handleUpdateTag} className="flex gap-2 flex-1 items-center">
+                                <input
+                                  type="text"
+                                  value={editingTag.name}
+                                  onChange={(e) => setEditingTag({ ...editingTag, name: e.target.value })}
+                                  className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                                />
+                                <input
+                                  type="color"
+                                  value={editingTag.color || '#6B7280'}
+                                  onChange={(e) => setEditingTag({ ...editingTag, color: e.target.value })}
+                                  className="w-8 h-8 rounded cursor-pointer"
+                                />
+                                <button type="submit" className="p-1 text-green-600 hover:bg-green-50 rounded">
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                </button>
+                                <button type="button" onClick={() => setEditingTag(null)} className="p-1 text-gray-500 hover:bg-gray-100 rounded">
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </form>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-3">
+                                  <svg className="w-4 h-4 text-gray-300 cursor-grab" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                  </svg>
+                                  <div 
+                                    className="w-4 h-4 rounded-full" 
+                                    style={{ backgroundColor: tag.color || '#6B7280' }}
+                                  ></div>
+                                  <span className="font-medium text-gray-900">{tag.name}</span>
+                                </div>
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => setEditingTag(tag)}
+                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                    title="Редактировать"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTag(tag)}
+                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors"
+                                    title="Удалить"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </motion.div>
+                        </SortableItem>
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
 
                 {internalTags.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
@@ -811,77 +1071,137 @@ const AdminDashboard: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-xl font-bold text-gray-900">Статусы обращений</h3>
-                    <p className="text-sm text-gray-500">Настройка отображения статусов</p>
+                    <p className="text-sm text-gray-500">Перетаскивайте для изменения порядка отображения</p>
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  {statuses.map((status) => (
-                    <motion.div 
-                      key={status.id}
-                      className="flex items-center justify-between p-4 bg-white rounded-xl border-2 border-gray-100 hover:border-gray-300 transition-all"
-                      whileHover={{ scale: 1.01 }}
-                    >
-                      {editingStatus?.id === status.id ? (
-                        <div className="flex flex-col md:flex-row gap-3 flex-1 items-center">
-                          <input
-                            type="text"
-                            value={editingStatus.name}
-                            onChange={(e) => setEditingStatus({ ...editingStatus, name: e.target.value })}
-                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900"
-                          />
-                          <input
-                            type="text"
-                            value={editingStatus.description}
-                            onChange={(e) => setEditingStatus({ ...editingStatus, description: e.target.value })}
-                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900"
-                            placeholder="Описание"
-                          />
-                          <input
-                            type="color"
-                            value={editingStatus.color}
-                            onChange={(e) => setEditingStatus({ ...editingStatus, color: e.target.value })}
-                            className="w-12 h-10 rounded cursor-pointer"
-                          />
-                          <button 
-                            onClick={() => handleUpdateStatus(editingStatus)}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                <form onSubmit={handleAddStatus} className="bg-gray-50 rounded-xl p-6 mb-6">
+                  <h4 className="font-medium text-gray-900 mb-4">Добавить новый статус</h4>
+                  <div className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Название</label>
+                      <input
+                        type="text"
+                        value={newStatus.name}
+                        onChange={(e) => setNewStatus({ ...newStatus, name: e.target.value })}
+                        placeholder="Название статуса"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
+                        required
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Описание</label>
+                      <input
+                        type="text"
+                        value={newStatus.description}
+                        onChange={(e) => setNewStatus({ ...newStatus, description: e.target.value })}
+                        placeholder="Описание статуса"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Цвет</label>
+                      <input
+                        type="color"
+                        value={newStatus.color}
+                        onChange={(e) => setNewStatus({ ...newStatus, color: e.target.value })}
+                        className="w-14 h-12 rounded-lg cursor-pointer border-2 border-gray-200"
+                      />
+                    </div>
+                    <button type="submit" className="btn-primary whitespace-nowrap">
+                      Добавить
+                    </button>
+                  </div>
+                </form>
+
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStatusDragEnd}>
+                  <SortableContext items={statuses.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-3">
+                      {statuses.map((status) => (
+                        <SortableItem key={status.id} id={status.id}>
+                          <motion.div 
+                            className="flex items-center justify-between p-4 bg-white rounded-xl border-2 border-gray-100 hover:border-gray-300 transition-all"
+                            whileHover={{ scale: 1.01 }}
                           >
-                            Сохранить
-                          </button>
-                          <button 
-                            onClick={() => setEditingStatus(null)}
-                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                          >
-                            Отмена
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-4">
-                            <div 
-                              className="w-4 h-4 rounded-full" 
-                              style={{ backgroundColor: status.color }}
-                            ></div>
-                            <div>
-                              <span className="font-medium text-gray-900">{status.name}</span>
-                              <p className="text-sm text-gray-500">{status.description}</p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setEditingStatus(status)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Редактировать"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
-                        </>
-                      )}
-                    </motion.div>
-                  ))}
-                </div>
+                            {editingStatus?.id === status.id ? (
+                              <div className="flex flex-col md:flex-row gap-3 flex-1 items-center">
+                                <input
+                                  type="text"
+                                  value={editingStatus.name}
+                                  onChange={(e) => setEditingStatus({ ...editingStatus, name: e.target.value })}
+                                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900"
+                                />
+                                <input
+                                  type="text"
+                                  value={editingStatus.description}
+                                  onChange={(e) => setEditingStatus({ ...editingStatus, description: e.target.value })}
+                                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900"
+                                  placeholder="Описание"
+                                />
+                                <input
+                                  type="color"
+                                  value={editingStatus.color}
+                                  onChange={(e) => setEditingStatus({ ...editingStatus, color: e.target.value })}
+                                  className="w-12 h-10 rounded cursor-pointer"
+                                />
+                                <button 
+                                  onClick={() => handleUpdateStatus(editingStatus)}
+                                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                >
+                                  Сохранить
+                                </button>
+                                <button 
+                                  onClick={() => setEditingStatus(null)}
+                                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                                >
+                                  Отмена
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-4">
+                                  <svg className="w-5 h-5 text-gray-300 cursor-grab" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                  </svg>
+                                  <div 
+                                    className="w-4 h-4 rounded-full" 
+                                    style={{ backgroundColor: status.color }}
+                                  ></div>
+                                  <div>
+                                    <span className="font-medium text-gray-900">{status.name}</span>
+                                    <p className="text-sm text-gray-500">{status.description}</p>
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => setEditingStatus(status)}
+                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Редактировать"
+                                  >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                  </button>
+                                  {!['new', 'in_progress', 'resolved', 'rejected'].includes(status.id) && (
+                                    <button
+                                      onClick={() => handleDeleteStatus(status.id)}
+                                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                      title="Удалить"
+                                    >
+                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </motion.div>
+                        </SortableItem>
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
               </div>
             </motion.div>
           )}
@@ -908,7 +1228,7 @@ const AdminDashboard: React.FC = () => {
 
               <form onSubmit={handleCreateUser} className="bg-gray-50 rounded-xl p-6 mb-6">
                 <h4 className="font-medium text-gray-900 mb-4">Добавить нового пользователя</h4>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Имя пользователя</label>
                     <input
@@ -953,78 +1273,98 @@ const AdminDashboard: React.FC = () => {
                       <option value="admin">Администратор</option>
                     </select>
                   </div>
-                  <div className="flex items-end">
-                    <button type="submit" className="btn-primary w-full">Добавить</button>
-                  </div>
+                </div>
+                <div className="mt-4">
+                  <button type="submit" className="btn-primary">
+                    <svg className="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                    </svg>
+                    Добавить пользователя
+                  </button>
                 </div>
               </form>
 
               <div className="space-y-3">
                 {users.map((user) => (
                   <motion.div 
-                    key={user.id} 
-                    className="flex items-center justify-between p-4 bg-white rounded-xl border-2 border-gray-100 hover:border-gray-300 transition-all"
+                    key={user.id}
+                    className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
+                      user.is_active 
+                        ? 'bg-white border-gray-100 hover:border-gray-300' 
+                        : 'bg-gray-50 border-gray-100 opacity-60'
+                    }`}
                     whileHover={{ scale: 1.01 }}
                   >
                     {editingUser?.id === user.id ? (
-                      <form onSubmit={handleUpdateUser} className="flex gap-3 flex-1 items-center flex-wrap">
+                      <form onSubmit={handleUpdateUser} className="flex flex-wrap gap-3 flex-1 items-center">
                         <input
                           type="text"
                           value={editingUser.username}
                           onChange={(e) => setEditingUser({ ...editingUser, username: e.target.value })}
-                          className="px-3 py-2 border border-gray-300 rounded-lg text-gray-900"
+                          className="flex-1 min-w-[150px] px-4 py-2 border border-gray-300 rounded-lg text-gray-900"
                         />
                         <input
                           type="email"
                           value={editingUser.email}
                           onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                          className="px-3 py-2 border border-gray-300 rounded-lg text-gray-900"
+                          className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-lg text-gray-900"
                         />
                         <select
                           value={editingUser.role}
                           onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as 'admin' | 'moderator' })}
-                          className="px-3 py-2 border border-gray-300 rounded-lg text-gray-900"
+                          className="px-4 py-2 border border-gray-300 rounded-lg text-gray-900"
                         >
                           <option value="moderator">Модератор</option>
                           <option value="admin">Администратор</option>
                         </select>
-                        <label className="flex items-center gap-2 cursor-pointer">
+                        <label className="flex items-center gap-2">
                           <input
                             type="checkbox"
                             checked={editingUser.is_active}
                             onChange={(e) => setEditingUser({ ...editingUser, is_active: e.target.checked })}
-                            className="w-4 h-4"
+                            className="w-4 h-4 text-primary rounded"
                           />
                           <span className="text-sm text-gray-700">Активен</span>
                         </label>
-                        <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Сохранить</button>
-                        <button type="button" onClick={() => setEditingUser(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Отмена</button>
+                        <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                          Сохранить
+                        </button>
+                        <button type="button" onClick={() => setEditingUser(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                          Отмена
+                        </button>
                       </form>
                     ) : (
                       <>
                         <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                            <span className="text-lg font-medium text-gray-600">
-                              {user.username.charAt(0).toUpperCase()}
-                            </span>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
+                            user.role === 'admin' ? 'bg-indigo-500' : 'bg-primary'
+                          }`}>
+                            {user.username.charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900">{user.username}</p>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900">{user.username}</span>
+                              <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                user.role === 'admin' 
+                                  ? 'bg-indigo-100 text-indigo-700' 
+                                  : 'bg-primary-100 text-primary-700'
+                              }`}>
+                                {user.role === 'admin' ? 'Администратор' : 'Модератор'}
+                              </span>
+                              {!user.is_active && (
+                                <span className="px-2 py-0.5 text-xs bg-gray-200 text-gray-600 rounded-full">
+                                  Неактивен
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-500">{user.email}</p>
                           </div>
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {user.role === 'admin' ? 'Администратор' : 'Модератор'}
-                          </span>
-                          {!user.is_active && (
-                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">Неактивен</span>
-                          )}
                         </div>
                         <div className="flex gap-2">
                           <button
                             onClick={() => setEditingUser(user)}
                             className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Редактировать"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1033,6 +1373,7 @@ const AdminDashboard: React.FC = () => {
                           <button
                             onClick={() => handleDeleteUser(user.id)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Удалить"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1044,244 +1385,6 @@ const AdminDashboard: React.FC = () => {
                   </motion.div>
                 ))}
               </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'settings' && (
-            <motion.div
-              key="settings"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
-            >
-              <div className="card">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">Общие настройки</h3>
-                    <p className="text-sm text-gray-500">Основные параметры системы</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Название системы
-                    </label>
-                    <input
-                      type="text"
-                      value={systemSettings.siteName}
-                      onChange={(e) => setSystemSettings({...systemSettings, siteName: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email для уведомлений
-                    </label>
-                    <input
-                      type="email"
-                      value={systemSettings.notificationEmail}
-                      onChange={(e) => setSystemSettings({...systemSettings, notificationEmail: e.target.value})}
-                      placeholder="admin@party.ru"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="card">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">Уведомления</h3>
-                    <p className="text-sm text-gray-500">Настройка системы оповещений</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
-                    <input 
-                      type="checkbox" 
-                      checked={systemSettings.emailNotifications}
-                      onChange={(e) => setSystemSettings({...systemSettings, emailNotifications: e.target.checked})}
-                      className="w-5 h-5 rounded text-primary focus:ring-primary"
-                    />
-                    <div>
-                      <p className="font-medium text-gray-900">Email-уведомления</p>
-                      <p className="text-sm text-gray-500">Отправлять уведомления о новых обращениях на email</p>
-                    </div>
-                  </label>
-
-                  <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
-                    <input 
-                      type="checkbox" 
-                      checked={systemSettings.smsNotifications}
-                      onChange={(e) => setSystemSettings({...systemSettings, smsNotifications: e.target.checked})}
-                      className="w-5 h-5 rounded text-primary focus:ring-primary"
-                    />
-                    <div>
-                      <p className="font-medium text-gray-900">SMS-уведомления</p>
-                      <p className="text-sm text-gray-500">Отправлять SMS о срочных обращениях</p>
-                    </div>
-                  </label>
-
-                  <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
-                    <input 
-                      type="checkbox" 
-                      checked={systemSettings.autoAssign}
-                      onChange={(e) => setSystemSettings({...systemSettings, autoAssign: e.target.checked})}
-                      className="w-5 h-5 rounded text-primary focus:ring-primary"
-                    />
-                    <div>
-                      <p className="font-medium text-gray-900">Автоматическое назначение</p>
-                      <p className="text-sm text-gray-500">Автоматически назначать модератора на новые обращения</p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              <div className="card">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">Рабочие часы</h3>
-                    <p className="text-sm text-gray-500">Время работы службы поддержки</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Начало рабочего дня
-                    </label>
-                    <input
-                      type="time"
-                      value={systemSettings.workingHoursStart}
-                      onChange={(e) => setSystemSettings({...systemSettings, workingHoursStart: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Конец рабочего дня
-                    </label>
-                    <input
-                      type="time"
-                      value={systemSettings.workingHoursEnd}
-                      onChange={(e) => setSystemSettings({...systemSettings, workingHoursEnd: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="card">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">Настройки файлов</h3>
-                    <p className="text-sm text-gray-500">Ограничения для загружаемых файлов</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Максимальный размер файла (МБ)
-                    </label>
-                    <input
-                      type="number"
-                      value={systemSettings.maxFileSize}
-                      onChange={(e) => setSystemSettings({...systemSettings, maxFileSize: parseInt(e.target.value)})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Разрешённые типы файлов
-                    </label>
-                    <input
-                      type="text"
-                      value={systemSettings.allowedFileTypes}
-                      onChange={(e) => setSystemSettings({...systemSettings, allowedFileTypes: e.target.value})}
-                      placeholder="pdf,doc,jpg,png"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="card">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">Дополнительно</h3>
-                    <p className="text-sm text-gray-500">Дополнительные настройки системы</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Автозакрытие решённых обращений (дней)
-                    </label>
-                    <input
-                      type="number"
-                      value={systemSettings.autoCloseResolved}
-                      onChange={(e) => setSystemSettings({...systemSettings, autoCloseResolved: parseInt(e.target.value)})}
-                      className="w-full md:w-1/2 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 bg-white"
-                    />
-                    <p className="text-sm text-gray-500 mt-1">Автоматически архивировать решённые обращения через указанное количество дней</p>
-                  </div>
-
-                  <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
-                    <input 
-                      type="checkbox" 
-                      checked={systemSettings.requirePhoneNumber}
-                      onChange={(e) => setSystemSettings({...systemSettings, requirePhoneNumber: e.target.checked})}
-                      className="w-5 h-5 rounded text-primary focus:ring-primary"
-                    />
-                    <div>
-                      <p className="font-medium text-gray-900">Обязательный номер телефона</p>
-                      <p className="text-sm text-gray-500">Требовать указание номера телефона при подаче обращения</p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              <motion.button 
-                onClick={handleSaveSettings}
-                className="btn-primary w-full md:w-auto"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <svg className="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Сохранить все настройки
-              </motion.button>
             </motion.div>
           )}
         </AnimatePresence>

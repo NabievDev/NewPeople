@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.core.database import get_db
 from app.models.models import Category as CategoryModel, User, UserRole
-from app.schemas.schemas import Category, CategoryCreate, CategoryUpdate, CategoryTree
+from app.schemas.schemas import Category, CategoryCreate, CategoryUpdate, CategoryTree, CategoryReorder
 from app.routers.auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -31,7 +31,8 @@ async def create_category(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    db_category = CategoryModel(**category.model_dump())
+    max_order = db.query(CategoryModel).filter(CategoryModel.parent_id == category.parent_id).count()
+    db_category = CategoryModel(**category.model_dump(), order=max_order)
     db.add(db_category)
     db.commit()
     db.refresh(db_category)
@@ -55,6 +56,24 @@ async def update_category(
     db.commit()
     db.refresh(category)
     return category
+
+@router.put("/reorder")
+async def reorder_categories(
+    reorder_data: CategoryReorder,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    for index, cat_id in enumerate(reorder_data.category_ids):
+        category = db.query(CategoryModel).filter(CategoryModel.id == cat_id).first()
+        if category:
+            category.order = index
+            if reorder_data.parent_id is not None:
+                if reorder_data.parent_id == 0:
+                    category.parent_id = None
+                else:
+                    category.parent_id = reorder_data.parent_id
+    db.commit()
+    return {"message": "Categories reordered successfully"}
 
 @router.delete("/{category_id}")
 async def delete_category(

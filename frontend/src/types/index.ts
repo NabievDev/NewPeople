@@ -22,6 +22,7 @@ export interface Tag {
   name: string;
   color?: string;
   is_public: boolean;
+  order?: number;
   created_at: string;
 }
 

@@ -47,11 +47,37 @@ The system is built as a full-stack web application with a clear separation betw
 - **Database**: SQLite for development, with a preference for PostgreSQL in production.
 - **Deployment**: Backend runs on Uvicorn, frontend served via Vite.
 
+## Recent Changes (November 2025)
+
+### Drag-and-Drop Functionality
+- Added @dnd-kit library for drag-and-drop functionality (core, sortable, utilities)
+- Categories can be reordered by drag-and-drop in AdminDashboard
+- Tags can be reordered by drag-and-drop in AdminDashboard
+- Statuses can be reordered by drag-and-drop in AdminDashboard (saved to localStorage)
+
+### UI Improvements
+- Main page (PublicAppealForm) redesigned with party logo and 1.5s loading animation
+- Logo file located at frontend/src/assets/logo.png
+- Styled custom dropdowns replace native select elements in AdminDashboard and ModeratorDashboard
+- Removed Settings tab from AdminDashboard (simplified interface)
+- Added tag editing capability with color picker
+
+### Bug Fixes
+- Fixed comment count bug in ModeratorDashboard by resetting comments state when appeal changes
+
+### API Endpoints Added
+- PUT /tags/internal/{id} - Update internal tag (name, color)
+- PUT /tags/internal/reorder - Reorder internal tags
+- PUT /categories/reorder - Reorder categories
+
+### Database Changes
+- Added `order` INTEGER DEFAULT 0 column to internal_tags table
+
 ## External Dependencies
 
 ### Backend
 - **Framework**: FastAPI
-- **Database**: SQLite (for development), PostgreSQL (preferred for production)
+- **Database**: PostgreSQL (via DATABASE_URL environment variable)
 - **ORM**: SQLAlchemy
 - **Authentication**: `python-jose`, `bcrypt`
 - **Validation**: Pydantic
@@ -67,3 +93,4 @@ The system is built as a full-stack web application with a clear separation betw
 - **Forms**: `react-hook-form`
 - **File Upload**: `react-dropzone`
 - **Charts**: Recharts
+- **Drag and Drop**: @dnd-kit (core, sortable, utilities)

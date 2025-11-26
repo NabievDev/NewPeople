@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { appealsApi, tagsApi, categoriesApi } from '../services/api';
 import type { Appeal, Tag, Category } from '../types';
@@ -18,7 +18,19 @@ const ModeratorDashboard: React.FC = () => {
   const [searchResults, setSearchResults] = useState<Appeal[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const { logout, user } = useAuth();
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
+        setCategoryDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -325,16 +337,61 @@ const ModeratorDashboard: React.FC = () => {
             transition={{ delay: 0.15 }}
             className="mt-4 flex flex-wrap gap-4 items-center"
           >
-            <select
-              value={selectedCategoryId || ''}
-              onChange={(e) => setSelectedCategoryId(e.target.value ? parseInt(e.target.value) : null)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
-            >
-              <option value="">Все категории</option>
-              {flattenCategories(categories).map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
+            <div className="relative" ref={categoryDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                className="min-w-[200px] px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white text-left flex items-center justify-between gap-2"
+              >
+                <span className={selectedCategoryId ? 'text-gray-900' : 'text-gray-500'}>
+                  {selectedCategoryId 
+                    ? flattenCategories(categories).find(c => c.id === selectedCategoryId)?.name || 'Все категории'
+                    : 'Все категории'}
+                </span>
+                <svg className={`w-5 h-5 text-gray-400 transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <AnimatePresence>
+                {categoryDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute z-50 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 max-h-80 overflow-y-auto"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCategoryId(null);
+                        setCategoryDropdownOpen(false);
+                      }}
+                      className={`w-full px-4 py-3 text-left hover:bg-primary-50 transition-colors font-medium border-b border-gray-100 ${
+                        !selectedCategoryId ? 'bg-primary-50 text-primary' : 'text-gray-700'
+                      }`}
+                    >
+                      Все категории
+                    </button>
+                    {flattenCategories(categories).map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCategoryId(cat.id);
+                          setCategoryDropdownOpen(false);
+                        }}
+                        className={`w-full px-4 py-3 text-left hover:bg-primary-50 transition-colors flex items-center gap-2 ${
+                          selectedCategoryId === cat.id ? 'bg-primary-50 text-primary' : ''
+                        }`}
+                      >
+                        <div className={`w-2 h-2 rounded-full ${cat.name.startsWith('—') ? 'bg-gray-400' : 'bg-primary'}`}></div>
+                        <span className={cat.name.startsWith('—') ? 'text-gray-600 text-sm' : 'text-gray-900'}>{cat.name}</span>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             {(selectedTagId || selectedCategoryId || statusFilter !== 'all') && (
               <button

@@ -56,6 +56,10 @@ export const categoriesApi = {
     return response.data;
   },
   
+  reorder: async (categoryIds: number[], parentId?: number): Promise<void> => {
+    await api.put('/categories/reorder', { category_ids: categoryIds, parent_id: parentId ?? 0 });
+  },
+  
   delete: async (id: number): Promise<void> => {
     await api.delete(`/categories/${id}`);
   },
@@ -85,6 +89,15 @@ export const tagsApi = {
   createInternal: async (data: { name: string; color?: string }): Promise<Tag> => {
     const response = await api.post<Tag>('/tags/internal', data);
     return response.data;
+  },
+  
+  updateInternal: async (id: number, data: { name?: string; color?: string }): Promise<Tag> => {
+    const response = await api.patch<Tag>(`/tags/internal/${id}`, data);
+    return response.data;
+  },
+  
+  reorderInternal: async (tagIds: number[]): Promise<void> => {
+    await api.put('/tags/internal/reorder', { tag_ids: tagIds });
   },
   
   deletePublic: async (id: number): Promise<void> => {

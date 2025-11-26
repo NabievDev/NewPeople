@@ -33,13 +33,26 @@ class TagBase(BaseModel):
 class TagCreate(TagBase):
     pass
 
+class TagUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+    order: Optional[int] = None
+
 class Tag(TagBase):
     id: int
     is_public: bool = True
+    order: int = 0
     created_at: datetime
     
     class Config:
         from_attributes = True
+
+class TagReorder(BaseModel):
+    tag_ids: List[int]
+
+class CategoryReorder(BaseModel):
+    category_ids: List[int]
+    parent_id: Optional[int] = None
 
 class AppealCreate(BaseModel):
     is_anonymous: bool = False
