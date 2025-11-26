@@ -176,3 +176,25 @@ class Statistics(BaseModel):
     public_tag_stats: List[TagStatistics]
     internal_tag_stats: List[TagStatistics]
     average_resolution_time: Optional[dict] = None  # weeks, days, hours, minutes
+
+
+class TimelineDataPoint(BaseModel):
+    date: str
+    count: int
+    label: str
+
+
+class ModeratorStats(BaseModel):
+    id: int
+    username: str
+    email: str
+    total_processed: int
+    today_processed: int
+
+
+class AppealsByPeriodStats(BaseModel):
+    total: int
+    new: int
+    in_progress: int
+    resolved: int
+    rejected: int

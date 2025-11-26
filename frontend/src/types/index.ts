@@ -121,3 +121,27 @@ export interface SystemSettings {
   notification_email: string;
   auto_assign_enabled: boolean;
 }
+
+export interface TimelineDataPoint {
+  date: string;
+  count: number;
+  label: string;
+}
+
+export interface ModeratorStats {
+  id: number;
+  username: string;
+  email: string;
+  total_processed: number;
+  today_processed: number;
+}
+
+export interface AppealsByPeriodStats {
+  total: number;
+  new: number;
+  in_progress: number;
+  resolved: number;
+  rejected: number;
+}
+
+export type TimePeriod = 'hour' | 'day' | 'week' | 'month' | 'year' | 'all';

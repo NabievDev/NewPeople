@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, Area, AreaChart } from 'recharts';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { categoriesApi, tagsApi, usersApi, statsApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import type { Category, Tag, User, Statistics } from '../types';
+import type { Category, Tag, User, Statistics, TimelineDataPoint, ModeratorStats, AppealsByPeriodStats, TimePeriod } from '../types';
+import LoadingScreen from '../components/LoadingScreen';
 
 type TabType = 'dashboard' | 'categories' | 'users';
 
@@ -78,6 +79,12 @@ const AdminDashboard: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [parentCategoryDropdownOpen, setParentCategoryDropdownOpen] = useState(false);
 
+  const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
+  const [moderatorsStats, setModeratorsStats] = useState<ModeratorStats[]>([]);
+  const [periodStats, setPeriodStats] = useState<AppealsByPeriodStats | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('week');
+  const [selectedStatsPeriod, setSelectedStatsPeriod] = useState<TimePeriod>('month');
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -90,6 +97,24 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('appealStatuses', JSON.stringify(statuses));
   }, [statuses]);
+
+  useEffect(() => {
+    const loadAdvancedStats = async () => {
+      try {
+        const [timeline, moderators, period] = await Promise.all([
+          statsApi.getTimeline(selectedPeriod),
+          statsApi.getModerators(),
+          statsApi.getByPeriod(selectedStatsPeriod),
+        ]);
+        setTimelineData(timeline);
+        setModeratorsStats(moderators);
+        setPeriodStats(period);
+      } catch (error) {
+        console.error('Failed to load advanced stats:', error);
+      }
+    };
+    loadAdvancedStats();
+  }, [selectedPeriod, selectedStatsPeriod]);
 
   const loadData = async () => {
     try {
@@ -164,34 +189,49 @@ const AdminDashboard: React.FC = () => {
 
   const handleCreateTag = async (e: React.FormEvent) => {
     e.preventDefault();
+    const tempId = -Date.now();
+    const optimisticTag: Tag = {
+      id: tempId,
+      name: newTag.name,
+      color: newTag.color,
+      is_public: false,
+      order: tags.filter(t => !t.is_public).length,
+      created_at: new Date().toISOString(),
+    };
+    setTags(prev => [...prev, optimisticTag]);
+    setNewTag({ name: '', color: '#00C9C8' });
     try {
-      await tagsApi.createInternal({ name: newTag.name, color: newTag.color });
-      setNewTag({ name: '', color: '#00C9C8' });
-      loadData();
+      const createdTag = await tagsApi.createInternal({ name: optimisticTag.name, color: optimisticTag.color });
+      setTags(prev => prev.map(t => t.id === tempId ? createdTag : t));
     } catch (error) {
       console.error('Failed to create tag:', error);
+      setTags(prev => prev.filter(t => t.id !== tempId));
     }
   };
 
   const handleUpdateTag = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTag) return;
+    const previousTags = [...tags];
+    setTags(prev => prev.map(t => t.id === editingTag.id ? editingTag : t));
+    setEditingTag(null);
     try {
       await tagsApi.updateInternal(editingTag.id, { name: editingTag.name, color: editingTag.color });
-      setEditingTag(null);
-      loadData();
     } catch (error) {
       console.error('Failed to update tag:', error);
+      setTags(previousTags);
     }
   };
 
   const handleDeleteTag = async (tag: Tag) => {
     if (!confirm('Удалить этот тег?')) return;
+    const previousTags = [...tags];
+    setTags(prev => prev.filter(t => t.id !== tag.id));
     try {
       await tagsApi.deleteInternal(tag.id);
-      loadData();
     } catch (error) {
       console.error('Failed to delete tag:', error);
+      setTags(previousTags);
     }
   };
 
@@ -199,12 +239,16 @@ const AdminDashboard: React.FC = () => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = internalTags.findIndex(t => t.id.toString() === active.id);
-    const newIndex = internalTags.findIndex(t => t.id.toString() === over.id);
+    const activeId = String(active.id).replace('tag-', '');
+    const overId = String(over.id).replace('tag-', '');
+    
+    const oldIndex = internalTags.findIndex(t => String(t.id) === activeId);
+    const newIndex = internalTags.findIndex(t => String(t.id) === overId);
     
     if (oldIndex !== -1 && newIndex !== -1) {
       const newOrder = arrayMove(internalTags, oldIndex, newIndex);
-      setTags(prev => [...prev.filter(t => t.is_public), ...newOrder]);
+      const publicTags = tags.filter(t => t.is_public);
+      setTags([...publicTags, ...newOrder]);
       try {
         await tagsApi.reorderInternal(newOrder.map(t => t.id));
       } catch (error) {
@@ -339,17 +383,16 @@ const AdminDashboard: React.FC = () => {
     ].filter(item => item.value > 0);
   };
 
-  const internalTags = tags.filter(t => !t.is_public).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const internalTags = useMemo(() => {
+    return tags
+      .filter(t => !t.is_public)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+  }, [tags]);
+
+  const tagIds = useMemo(() => internalTags.map(t => `tag-${t.id}`), [internalTags]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          <p className="text-gray-600">Загрузка...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen title="Панель администратора" />;
   }
 
   return (
@@ -699,6 +742,273 @@ const AdminDashboard: React.FC = () => {
                   </div>
                 </motion.div>
               </div>
+
+              <motion.div 
+                className="card"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.7 }}
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary-600 rounded-lg flex items-center justify-center shadow-lg">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">Динамика обращений</h3>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { value: 'hour' as TimePeriod, label: 'Час' },
+                      { value: 'day' as TimePeriod, label: 'День' },
+                      { value: 'week' as TimePeriod, label: 'Неделя' },
+                      { value: 'month' as TimePeriod, label: 'Месяц' },
+                      { value: 'year' as TimePeriod, label: 'Год' },
+                      { value: 'all' as TimePeriod, label: 'Все' },
+                    ].map((period) => (
+                      <button
+                        key={period.value}
+                        onClick={() => setSelectedPeriod(period.value)}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                          selectedPeriod === period.value
+                            ? 'bg-primary text-white shadow-md'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {period.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="h-72">
+                  {timelineData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={timelineData}>
+                        <defs>
+                          <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#00C9C8" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#00C9C8" stopOpacity={0.05}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis 
+                          dataKey="label" 
+                          tick={{ fill: '#6B7280', fontSize: 12 }}
+                          axisLine={{ stroke: '#E5E7EB' }}
+                        />
+                        <YAxis 
+                          tick={{ fill: '#6B7280', fontSize: 12 }}
+                          axisLine={{ stroke: '#E5E7EB' }}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: 'white', 
+                            border: 'none', 
+                            borderRadius: '12px', 
+                            boxShadow: '0 10px 40px rgba(0,0,0,0.1)' 
+                          }}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="count" 
+                          stroke="#00C9C8" 
+                          strokeWidth={3}
+                          fill="url(#colorCount)"
+                          animationDuration={1500}
+                          name="Обращения"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      <div className="text-center">
+                        <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        <p>Нет данных для отображения</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <motion.div 
+                  className="card"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.8 }}
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">Статистика модераторов</h3>
+                  </div>
+                  <div className="space-y-3 max-h-80 overflow-y-auto">
+                    {moderatorsStats.length > 0 ? (
+                      [...moderatorsStats]
+                        .sort((a, b) => b.total_processed - a.total_processed)
+                        .map((mod, index) => (
+                          <motion.div
+                            key={mod.id}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: index * 0.1 }}
+                            className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-100 hover:shadow-md transition-all"
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md">
+                                {mod.username.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-semibold text-gray-900">{mod.username}</p>
+                                <p className="text-sm text-gray-500">{mod.email}</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-6 text-right">
+                              <div>
+                                <p className="text-2xl font-bold text-gray-900">{mod.total_processed}</p>
+                                <p className="text-xs text-gray-500">Всего обработано</p>
+                              </div>
+                              <div className="border-l border-gray-200 pl-6">
+                                <p className="text-2xl font-bold text-primary">{mod.today_processed}</p>
+                                <p className="text-xs text-gray-500">Сегодня</p>
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))
+                    ) : (
+                      <div className="text-center py-12 text-gray-400">
+                        <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                        <p>Нет данных о модераторах</p>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+
+                <motion.div 
+                  className="card"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.9 }}
+                >
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg">
+                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-bold text-gray-900">Обращения за период</h3>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        { value: 'hour' as TimePeriod, label: 'Час' },
+                        { value: 'day' as TimePeriod, label: 'День' },
+                        { value: 'week' as TimePeriod, label: 'Неделя' },
+                        { value: 'month' as TimePeriod, label: 'Месяц' },
+                        { value: 'year' as TimePeriod, label: 'Год' },
+                        { value: 'all' as TimePeriod, label: 'Все' },
+                      ].map((period) => (
+                        <button
+                          key={period.value}
+                          onClick={() => setSelectedStatsPeriod(period.value)}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                            selectedStatsPeriod === period.value
+                              ? 'bg-indigo-500 text-white shadow-md'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {period.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {periodStats ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <motion.div 
+                        className="p-4 bg-gradient-to-br from-gray-50 to-purple-50 rounded-xl border border-gray-100"
+                        whileHover={{ scale: 1.02 }}
+                      >
+                        <p className="text-3xl font-bold text-gray-900">{periodStats.total}</p>
+                        <p className="text-sm text-gray-600 mt-1">Всего</p>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                          <div className="bg-gray-500 h-1.5 rounded-full" style={{ width: '100%' }}></div>
+                        </div>
+                      </motion.div>
+                      <motion.div 
+                        className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border border-blue-100"
+                        whileHover={{ scale: 1.02 }}
+                      >
+                        <p className="text-3xl font-bold text-blue-700">{periodStats.new}</p>
+                        <p className="text-sm text-blue-600 mt-1">Новые</p>
+                        <div className="w-full bg-blue-200 rounded-full h-1.5 mt-2">
+                          <div 
+                            className="bg-blue-500 h-1.5 rounded-full transition-all duration-500" 
+                            style={{ width: periodStats.total > 0 ? `${(periodStats.new / periodStats.total) * 100}%` : '0%' }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-blue-500 mt-1">{periodStats.total > 0 ? Math.round((periodStats.new / periodStats.total) * 100) : 0}%</p>
+                      </motion.div>
+                      <motion.div 
+                        className="p-4 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl border border-yellow-100"
+                        whileHover={{ scale: 1.02 }}
+                      >
+                        <p className="text-3xl font-bold text-yellow-700">{periodStats.in_progress}</p>
+                        <p className="text-sm text-yellow-600 mt-1">В работе</p>
+                        <div className="w-full bg-yellow-200 rounded-full h-1.5 mt-2">
+                          <div 
+                            className="bg-yellow-500 h-1.5 rounded-full transition-all duration-500" 
+                            style={{ width: periodStats.total > 0 ? `${(periodStats.in_progress / periodStats.total) * 100}%` : '0%' }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-yellow-500 mt-1">{periodStats.total > 0 ? Math.round((periodStats.in_progress / periodStats.total) * 100) : 0}%</p>
+                      </motion.div>
+                      <motion.div 
+                        className="p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border border-green-100"
+                        whileHover={{ scale: 1.02 }}
+                      >
+                        <p className="text-3xl font-bold text-green-700">{periodStats.resolved}</p>
+                        <p className="text-sm text-green-600 mt-1">Решённые</p>
+                        <div className="w-full bg-green-200 rounded-full h-1.5 mt-2">
+                          <div 
+                            className="bg-green-500 h-1.5 rounded-full transition-all duration-500" 
+                            style={{ width: periodStats.total > 0 ? `${(periodStats.resolved / periodStats.total) * 100}%` : '0%' }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-green-500 mt-1">{periodStats.total > 0 ? Math.round((periodStats.resolved / periodStats.total) * 100) : 0}%</p>
+                      </motion.div>
+                      <motion.div 
+                        className="p-4 bg-gradient-to-br from-red-50 to-red-100 rounded-xl border border-red-100"
+                        whileHover={{ scale: 1.02 }}
+                      >
+                        <p className="text-3xl font-bold text-red-700">{periodStats.rejected}</p>
+                        <p className="text-sm text-red-600 mt-1">Отклонённые</p>
+                        <div className="w-full bg-red-200 rounded-full h-1.5 mt-2">
+                          <div 
+                            className="bg-red-500 h-1.5 rounded-full transition-all duration-500" 
+                            style={{ width: periodStats.total > 0 ? `${(periodStats.rejected / periodStats.total) * 100}%` : '0%' }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-red-500 mt-1">{periodStats.total > 0 ? Math.round((periodStats.rejected / periodStats.total) * 100) : 0}%</p>
+                      </motion.div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-400">
+                      <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      <p>Загрузка данных...</p>
+                    </div>
+                  )}
+                </motion.div>
+              </div>
             </motion.div>
           )}
 
@@ -981,10 +1291,10 @@ const AdminDashboard: React.FC = () => {
                 </form>
 
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTagDragEnd}>
-                  <SortableContext items={internalTags.map(t => t.id.toString())} strategy={verticalListSortingStrategy}>
+                  <SortableContext items={tagIds} strategy={verticalListSortingStrategy}>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {internalTags.map((tag) => (
-                        <SortableItem key={tag.id} id={tag.id.toString()}>
+                        <SortableItem key={`tag-${tag.id}`} id={`tag-${tag.id}`}>
                           <motion.div 
                             className="flex items-center justify-between p-4 bg-white rounded-xl border-2 border-gray-100 hover:border-gray-300 transition-all"
                             whileHover={{ scale: 1.02 }}

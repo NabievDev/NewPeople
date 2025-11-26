@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Category, Tag, Appeal, AppealCreate, LoginCredentials, AuthToken, User, Comment, AppealHistoryItem, Statistics } from '../types';
+import type { Category, Tag, Appeal, AppealCreate, LoginCredentials, AuthToken, User, Comment, AppealHistoryItem, Statistics, TimelineDataPoint, ModeratorStats, AppealsByPeriodStats, TimePeriod } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -239,6 +239,21 @@ export const usersApi = {
 export const statsApi = {
   getAll: async (): Promise<Statistics> => {
     const response = await api.get<Statistics>('/stats');
+    return response.data;
+  },
+  
+  getTimeline: async (period: TimePeriod): Promise<TimelineDataPoint[]> => {
+    const response = await api.get<TimelineDataPoint[]>('/stats/appeals-timeline', { params: { period } });
+    return response.data;
+  },
+  
+  getModerators: async (): Promise<ModeratorStats[]> => {
+    const response = await api.get<ModeratorStats[]>('/stats/moderators');
+    return response.data;
+  },
+  
+  getByPeriod: async (period: TimePeriod): Promise<AppealsByPeriodStats> => {
+    const response = await api.get<AppealsByPeriodStats>('/stats/appeals-by-period', { params: { period } });
     return response.data;
   },
 };
