@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
 import os
+import re
 
 from keyboards import (
     get_main_menu_keyboard, 
@@ -102,9 +103,9 @@ async def show_my_appeals(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("appeals_page_"))
+@router.callback_query(F.data.startswith("page_"))
 async def show_appeals_page(callback: CallbackQuery):
-    page = int(callback.data.split("_")[-1])
+    page = int(callback.data.split("_")[1])
     user_id = callback.from_user.id
     appeals = get_user_appeals(user_id)
     
@@ -118,9 +119,9 @@ async def show_appeals_page(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("appeal_"))
+@router.callback_query(F.data.regexp(r"^appeal_\d+$"))
 async def show_appeal_detail(callback: CallbackQuery):
-    appeal_id = int(callback.data.split("_")[-1])
+    appeal_id = int(callback.data.split("_")[1])
     appeal = get_appeal_by_id(appeal_id)
     
     if not appeal:

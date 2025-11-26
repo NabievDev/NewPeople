@@ -1,5 +1,3 @@
-import asyncio
-import httpx
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from database import get_status_config
@@ -59,42 +57,3 @@ async def send_status_notification(
         return False
 
 
-class NotificationQueue:
-    def __init__(self, bot: Bot):
-        self.bot = bot
-        self.queue = asyncio.Queue()
-        self._running = False
-    
-    async def start(self):
-        self._running = True
-        asyncio.create_task(self._process_queue())
-    
-    async def stop(self):
-        self._running = False
-    
-    async def add_notification(self, telegram_user_id: int, appeal_id: int, old_status: str, new_status: str):
-        await self.queue.put({
-            "telegram_user_id": telegram_user_id,
-            "appeal_id": appeal_id,
-            "old_status": old_status,
-            "new_status": new_status
-        })
-    
-    async def _process_queue(self):
-        while self._running:
-            try:
-                if not self.queue.empty():
-                    notification = await self.queue.get()
-                    await send_status_notification(
-                        self.bot,
-                        notification["telegram_user_id"],
-                        notification["appeal_id"],
-                        notification["old_status"],
-                        notification["new_status"]
-                    )
-                    await asyncio.sleep(0.1)
-                else:
-                    await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Error processing notification queue: {e}")
-                await asyncio.sleep(1)

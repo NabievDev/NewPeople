@@ -79,7 +79,7 @@ localPort = 35517
 externalPort = 3000
 
 [[ports]]
-localPort = 42671
+localPort = 40673
 externalPort = 5000
 
 [[ports]]
@@ -103,3 +103,4 @@ packages = ["cargo", "libiconv", "libxcrypt", "rustc"]
 [userenv.shared]
 WEBAPP_URL = "https://f8030ec1-f67d-426c-b5f0-fc398a7d0cf2-00-3fmvqn9ta69ox.spock.replit.dev"
 TELEGRAM_BOT_URL = "http://localhost:3001"
+NOTIFY_SECRET = "J0C3ifxeuJIvBRmQjSG1mFMMfilXYtLuGG1BwfyHalk"

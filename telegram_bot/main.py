@@ -9,20 +9,27 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
 from handlers import router
-from notification_service import NotificationQueue, send_status_notification
+from notification_service import send_status_notification
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "")
+NOTIFY_SECRET = os.environ.get("NOTIFY_SECRET", "")
 
 bot: Bot = None
-notification_queue: NotificationQueue = None
 
 
 async def handle_notification(request):
     global bot
+    
+    if NOTIFY_SECRET:
+        auth_header = request.headers.get("Authorization", "")
+        expected_header = f"Bearer {NOTIFY_SECRET}"
+        if auth_header != expected_header:
+            logger.warning("Unauthorized notification request")
+            return web.json_response({"error": "Unauthorized"}, status=401)
     
     if not bot:
         return web.json_response({"error": "Bot not initialized"}, status=500)
@@ -74,7 +81,7 @@ async def start_web_server():
 
 
 async def main():
-    global bot, notification_queue
+    global bot
     
     if not BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not set!")
@@ -82,6 +89,9 @@ async def main():
     
     if not WEBAPP_URL:
         logger.warning("WEBAPP_URL not set! Mini-app button will not work properly.")
+    
+    if not NOTIFY_SECRET:
+        logger.warning("NOTIFY_SECRET not set! /notify endpoint will accept unauthenticated requests.")
     
     bot = Bot(
         token=BOT_TOKEN, 
@@ -91,16 +101,12 @@ async def main():
     dp = Dispatcher()
     dp.include_router(router)
     
-    notification_queue = NotificationQueue(bot)
-    await notification_queue.start()
-    
     web_runner = await start_web_server()
     
     try:
         logger.info("Starting bot polling...")
         await dp.start_polling(bot)
     finally:
-        await notification_queue.stop()
         await web_runner.cleanup()
         await bot.session.close()
 

@@ -5,6 +5,7 @@ import os
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_URL = os.environ.get("TELEGRAM_BOT_URL", "http://localhost:3001")
+NOTIFY_SECRET = os.environ.get("NOTIFY_SECRET", "")
 
 
 async def notify_status_change(
@@ -14,6 +15,10 @@ async def notify_status_change(
     new_status: str
 ):
     try:
+        headers = {}
+        if NOTIFY_SECRET:
+            headers["Authorization"] = f"Bearer {NOTIFY_SECRET}"
+        
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{TELEGRAM_BOT_URL}/notify",
@@ -23,6 +28,7 @@ async def notify_status_change(
                     "old_status": old_status,
                     "new_status": new_status
                 },
+                headers=headers,
                 timeout=10.0
             )
             

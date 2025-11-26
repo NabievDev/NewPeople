@@ -52,12 +52,12 @@ def get_appeals_list_keyboard(appeals: list, page: int = 0, page_size: int = 5) 
     
     if page > 0:
         nav_buttons.append(
-            InlineKeyboardButton(text="◀️ Назад", callback_data=f"appeals_page_{page - 1}")
+            InlineKeyboardButton(text="◀️ Назад", callback_data=f"page_{page - 1}")
         )
     
     if page < total_pages - 1:
         nav_buttons.append(
-            InlineKeyboardButton(text="Вперед ▶️", callback_data=f"appeals_page_{page + 1}")
+            InlineKeyboardButton(text="Вперед ▶️", callback_data=f"page_{page + 1}")
         )
     
     if nav_buttons:
