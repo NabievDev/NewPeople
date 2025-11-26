@@ -18,6 +18,10 @@ args = "Backend API"
 task = "workflow.run"
 args = "Frontend App"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Telegram Bot"
+
 [[workflows.workflow]]
 name = "Backend API"
 author = "agent"
@@ -42,6 +46,22 @@ waitForPort = 5000
 [workflows.workflow.metadata]
 outputType = "webview"
 
+[[workflows.workflow]]
+name = "Telegram Bot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd telegram_bot && python main.py"
+waitForPort = 3001
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
 [[ports]]
 localPort = 5000
 externalPort = 80
@@ -59,7 +79,7 @@ localPort = 35517
 externalPort = 3000
 
 [[ports]]
-localPort = 35707
+localPort = 42671
 externalPort = 5000
 
 [[ports]]
@@ -77,3 +97,9 @@ externalPort = 3003
 [nix]
 channel = "stable-25_05"
 packages = ["cargo", "libiconv", "libxcrypt", "rustc"]
+
+[userenv]
+
+[userenv.shared]
+WEBAPP_URL = "https://f8030ec1-f67d-426c-b5f0-fc398a7d0cf2-00-3fmvqn9ta69ox.spock.replit.dev"
+TELEGRAM_BOT_URL = "http://localhost:3001"

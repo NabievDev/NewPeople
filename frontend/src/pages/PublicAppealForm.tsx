@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import CategorySelector from '../components/CategorySelector';
 import FileUpload from '../components/FileUpload';
 import { appealsApi } from '../services/api';
-import type { AppealCreate } from '../types';
+import type { AppealCreate, TelegramUser } from '../types';
 import logoImage from '../assets/logo.png';
 
 const PublicAppealForm: React.FC = () => {
@@ -15,12 +15,47 @@ const PublicAppealForm: React.FC = () => {
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const telegramWebApp = useMemo(() => {
+    if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
+      return window.Telegram.WebApp;
+    }
+    return null;
+  }, []);
+
+  const telegramUser: TelegramUser | null = useMemo(() => {
+    if (telegramWebApp?.initDataUnsafe?.user) {
+      return telegramWebApp.initDataUnsafe.user;
+    }
+    return null;
+  }, [telegramWebApp]);
+
+  const isTelegramWebApp = !!telegramWebApp && !!telegramUser;
+
   const {
     register,
     handleSubmit,
     formState: { errors },
     reset,
+    setValue,
   } = useForm<Omit<AppealCreate, 'attachment' | 'category_id' | 'is_anonymous'>>();
+
+  useEffect(() => {
+    if (telegramWebApp) {
+      telegramWebApp.ready();
+      telegramWebApp.expand();
+      
+      if (telegramWebApp.themeParams.bg_color) {
+        document.body.style.backgroundColor = telegramWebApp.themeParams.bg_color;
+      }
+    }
+  }, [telegramWebApp]);
+
+  useEffect(() => {
+    if (telegramUser) {
+      const fullName = [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(' ');
+      setValue('author_name', fullName);
+    }
+  }, [telegramUser, setValue]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -47,9 +82,16 @@ const PublicAppealForm: React.FC = () => {
         category_id: selectedCategory,
         is_anonymous: isAnonymous,
         attachment: selectedFile || undefined,
+        telegram_user_id: telegramUser?.id,
+        telegram_username: telegramUser?.username,
       };
 
       await appealsApi.create(appealData);
+      
+      if (telegramWebApp) {
+        telegramWebApp.HapticFeedback.notificationOccurred('success');
+      }
+      
       setStep('success');
       reset();
       setSelectedFile(null);
@@ -57,6 +99,9 @@ const PublicAppealForm: React.FC = () => {
       setIsAnonymous(false);
     } catch (error) {
       console.error('Failed to submit appeal:', error);
+      if (telegramWebApp) {
+        telegramWebApp.HapticFeedback.notificationOccurred('error');
+      }
       alert('Произошла ошибка при отправке обращения. Попробуйте еще раз.');
     } finally {
       setIsSubmitting(false);

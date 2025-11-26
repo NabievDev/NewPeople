@@ -154,6 +154,12 @@ export const appealsApi = {
     if (data.attachment) {
       formData.append('files', data.attachment);
     }
+    if (data.telegram_user_id) {
+      formData.append('telegram_user_id', data.telegram_user_id.toString());
+    }
+    if (data.telegram_username) {
+      formData.append('telegram_username', data.telegram_username);
+    }
     
     const response = await api.post<Appeal>('/appeals', formData, {
       headers: {

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
@@ -18,6 +18,7 @@ from app.schemas.schemas import (
     AppealHistoryItem
 )
 from app.routers.auth import get_current_user
+from app.services.telegram_notifier import notify_status_change
 
 router = APIRouter(prefix="/appeals", tags=["appeals"])
 
@@ -41,10 +42,12 @@ async def create_appeal(
     phone: Optional[str] = Form(None),
     category_id: Optional[int] = Form(None),
     text: str = Form(...),
+    telegram_user_id: Optional[int] = Form(None),
+    telegram_username: Optional[str] = Form(None),
     files: Optional[List[UploadFile]] = File(None),
     db: Session = Depends(get_db)
 ):
-    if not is_anonymous and not email:
+    if not is_anonymous and not email and not telegram_user_id:
         raise HTTPException(status_code=400, detail="Email is required for non-anonymous appeals")
     
     media_file_paths = []
@@ -73,6 +76,8 @@ async def create_appeal(
         phone=phone,
         category_id=category_id,
         text=text,
+        telegram_user_id=telegram_user_id,
+        telegram_username=telegram_username,
         media_files=json.dumps(media_file_paths) if media_file_paths else None
     )
     db.add(appeal)
@@ -164,6 +169,7 @@ async def get_appeal_history(
 async def update_appeal(
     appeal_id: int,
     appeal_update: AppealUpdate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -179,6 +185,16 @@ async def update_appeal(
             HistoryActionType.STATUS_CHANGE,
             old_status, new_status
         )
+        
+        if appeal.telegram_user_id and old_status and new_status:
+            background_tasks.add_task(
+                notify_status_change,
+                appeal.telegram_user_id,
+                appeal_id,
+                old_status,
+                new_status
+            )
+        
         appeal.status = appeal_update.status
     
     if appeal_update.public_tag_ids is not None:
@@ -397,3 +413,34 @@ async def download_file(
         raise HTTPException(status_code=404, detail="File not found")
     
     return FileResponse(file_path)
+
+
+@router.get("/telegram/{telegram_user_id}", response_model=List[AppealSchema])
+async def get_appeals_by_telegram_user(
+    telegram_user_id: int,
+    db: Session = Depends(get_db)
+):
+    appeals = db.query(Appeal).filter(
+        Appeal.telegram_user_id == telegram_user_id
+    ).order_by(Appeal.created_at.desc()).all()
+    return appeals
+
+
+@router.get("/telegram/{telegram_user_id}/{appeal_id}", response_model=AppealSchema)
+async def get_appeal_by_telegram_user(
+    telegram_user_id: int,
+    appeal_id: int,
+    db: Session = Depends(get_db)
+):
+    appeal = db.query(Appeal).options(
+        joinedload(Appeal.public_tags),
+        joinedload(Appeal.category)
+    ).filter(
+        Appeal.id == appeal_id,
+        Appeal.telegram_user_id == telegram_user_id
+    ).first()
+    
+    if not appeal:
+        raise HTTPException(status_code=404, detail="Appeal not found")
+    
+    return appeal
