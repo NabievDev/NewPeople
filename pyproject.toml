@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "aiohttp>=3.8.6",
     "alembic>=1.17.2",
     "bcrypt==4.0.1",
     "email-validator>=2.3.0",
