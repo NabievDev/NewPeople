@@ -1,5 +1,7 @@
 from aiogram import Bot
 from aiogram.enums import ParseMode
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from database import get_status_config
 import logging
 
@@ -11,6 +13,30 @@ STATUS_EMOJI = {
     "resolved": "✅",
     "rejected": "❌"
 }
+
+STATUS_COLORS = {
+    "new": "🔵",
+    "in_progress": "🟡",
+    "resolved": "🟢",
+    "rejected": "🔴"
+}
+
+
+def get_notification_keyboard(appeal_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="📄 Посмотреть обращение",
+            callback_data=f"appeal_{appeal_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="📋 Все мои обращения",
+            callback_data="my_appeals"
+        )
+    )
+    return builder.as_markup()
 
 
 async def send_status_notification(
@@ -30,30 +56,51 @@ async def send_status_notification(
         
         new_emoji = STATUS_EMOJI.get(new_status, "📋")
         old_emoji = STATUS_EMOJI.get(old_status, "📋")
+        new_color = STATUS_COLORS.get(new_status, "⚪")
+        
+        if new_status == "resolved":
+            header = "🎉 <b>Отличные новости!</b>"
+            intro = "Ваше обращение было успешно рассмотрено:"
+        elif new_status == "in_progress":
+            header = "📢 <b>Обновление статуса</b>"
+            intro = "Ваше обращение взято в работу:"
+        elif new_status == "rejected":
+            header = "📢 <b>Уведомление</b>"
+            intro = "Статус вашего обращения изменился:"
+        else:
+            header = "📢 <b>Обновление статуса</b>"
+            intro = "Статус вашего обращения изменился:"
         
         message_text = f"""
-<b>Изменение статуса обращения</b>
+{header}
 
-Статус вашего обращения <b>#{appeal_id}</b> изменился:
+{intro}
 
-{old_emoji} <s>{old_status_name}</s>  →  {new_emoji} <b>{new_status_name}</b>
+━━━━━━━━━━━━━━━━━━━━
+
+📋 <b>Обращение #{appeal_id}</b>
+
+{old_emoji} <s>{old_status_name}</s>
+        ⬇️
+{new_color} {new_emoji} <b>{new_status_name}</b>
 
 {f'<i>{new_status_description}</i>' if new_status_description else ''}
 
-Для просмотра подробностей нажмите /my_appeals
+━━━━━━━━━━━━━━━━━━━━
+
+<i>Нажмите кнопку ниже для просмотра деталей</i>
 """
         
         await bot.send_message(
             chat_id=telegram_user_id,
             text=message_text,
-            parse_mode=ParseMode.HTML
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_notification_keyboard(appeal_id)
         )
         
-        logger.info(f"Notification sent to user {telegram_user_id} for appeal {appeal_id}")
+        logger.info(f"Notification sent to user {telegram_user_id} for appeal {appeal_id}: {old_status} -> {new_status}")
         return True
         
     except Exception as e:
         logger.error(f"Failed to send notification to user {telegram_user_id}: {e}")
         return False
-
-

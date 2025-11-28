@@ -223,3 +223,14 @@ export interface AppealsByPeriodStats {
 }
 
 export type TimePeriod = 'hour' | 'day' | 'week' | 'month' | 'year' | 'all';
+
+export interface AppealStatusConfig {
+  id: number;
+  status_key: string;
+  name: string;
+  color: string;
+  description?: string;
+  order: number;
+  is_system: boolean;
+  created_at: string;
+}

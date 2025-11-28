@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import PublicAppealForm from './pages/PublicAppealForm';
+import MyAppeals from './pages/MyAppeals';
 import Login from './pages/Login';
 import ModeratorDashboard from './pages/ModeratorDashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -12,6 +13,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<PublicAppealForm />} />
+          <Route path="/my-appeals" element={<MyAppeals />} />
           <Route path="/login" element={<Login />} />
           <Route
             path="/admin"

@@ -49,6 +49,21 @@ The system is built as a full-stack web application with a clear separation betw
 
 ## Recent Changes (November 2025)
 
+### UX Improvements & New Features (November 28, 2025)
+- **MyAppeals Page**: Created dedicated page `/my-appeals` for Telegram users to view their appeals with search, filtering by status, and sorting functionality
+- **Enhanced Telegram Bot UX**:
+  - Improved welcome messages with greetings based on time of day
+  - Added user statistics in welcome screen (total appeals, new, in progress)
+  - Rich formatting with emojis and separators for better readability
+  - Added callback handlers for inline buttons (show_help, show_about)
+  - Better appeal detail view with status descriptions
+  - Pagination for appeals list with refresh button
+- **Safe Area CSS Support**: Added CSS variables and classes for proper Telegram mini-app layout (safe-area-inset, pb-safe)
+- **Notification Improvements**: Enhanced status change notifications with contextual headers and action buttons
+- **Documentation**: Added comprehensive README.md in Russian with installation, deployment, and usage instructions
+- **Startup Scripts**: Added start.sh (Linux/macOS) and start.bat (Windows) for easy local development setup
+- **Type Organization**: Moved AppealStatusConfig type to types/index.ts for better code organization
+
 ### Environment Configuration Fix (November 26, 2025)
 - Updated telegram_bot/database.py to use PostgreSQL via DATABASE_URL instead of SQLite
 - Configured environment variables: TELEGRAM_BOT_TOKEN, WEBAPP_URL, TELEGRAM_BOT_URL

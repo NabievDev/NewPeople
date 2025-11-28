@@ -1,5 +1,7 @@
 import axios from 'axios';
-import type { Category, Tag, Appeal, AppealCreate, LoginCredentials, AuthToken, User, Comment, AppealHistoryItem, Statistics, TimelineDataPoint, ModeratorStats, AppealsByPeriodStats, TimePeriod } from '../types';
+import type { Category, Tag, Appeal, AppealCreate, LoginCredentials, AuthToken, User, Comment, AppealHistoryItem, Statistics, TimelineDataPoint, ModeratorStats, AppealsByPeriodStats, TimePeriod, AppealStatusConfig } from '../types';
+
+export type { AppealStatusConfig } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -263,17 +265,6 @@ export const statsApi = {
     return response.data;
   },
 };
-
-export interface AppealStatusConfig {
-  id: number;
-  status_key: string;
-  name: string;
-  color: string;
-  description?: string;
-  order: number;
-  is_system: boolean;
-  created_at: string;
-}
 
 export const statusesApi = {
   getAll: async (): Promise<AppealStatusConfig[]> => {
