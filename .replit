@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "python-3.11", "bash", "web", "postgresql-16"]
+modules = ["nodejs-20", "python-3.11", "bash", "web"]
 [agent]
 expertMode = true
 
@@ -50,13 +50,12 @@ outputType = "webview"
 name = "Telegram Bot"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd telegram_bot && python main.py"
-waitForPort = 3001
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd telegram_bot && uv run python main.py"
 
 [[ports]]
 localPort = 3001
@@ -85,6 +84,10 @@ externalPort = 3000
 [[ports]]
 localPort = 35631
 externalPort = 6000
+
+[[ports]]
+localPort = 36525
+externalPort = 8008
 
 [[ports]]
 localPort = 40673
