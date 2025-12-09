@@ -2,9 +2,29 @@ from app.core.database import SessionLocal, engine, Base
 from app.models.models import User, Category, PublicTag, InternalTag, AppealStatusConfig
 from app.core.security import get_password_hash
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+def run_migrations():
+    """Run necessary database migrations."""
+    with engine.connect() as conn:
+        try:
+            result = conn.execute(text("""
+                SELECT data_type FROM information_schema.columns 
+                WHERE table_name = 'appeals' AND column_name = 'status'
+            """))
+            row = result.fetchone()
+            if row and row[0] == 'USER-DEFINED':
+                conn.execute(text("""
+                    ALTER TABLE appeals ALTER COLUMN status TYPE VARCHAR USING status::VARCHAR
+                """))
+                conn.commit()
+                print("✓ Migrated appeals.status from enum to varchar")
+        except Exception as e:
+            print(f"Migration check: {e}")
 
 def init_database():
     Base.metadata.create_all(bind=engine)
+    run_migrations()
     
     db = SessionLocal()
     try:

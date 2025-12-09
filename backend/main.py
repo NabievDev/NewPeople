@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from sqlalchemy import func, distinct, case, extract
+from sqlalchemy import func, distinct, case, extract, text
 from datetime import datetime, timedelta
 from typing import List, Literal
 import os
@@ -10,6 +10,28 @@ from app.core.database import engine, Base, get_db
 from app.routers import auth, appeals, categories, tags, users, statuses, admin_notifications
 from app.routers.auth import get_current_user, require_admin
 from app.schemas.schemas import TimelineDataPoint, ModeratorStats, AppealsByPeriodStats
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+def run_migrations():
+    """Run necessary database migrations on startup."""
+    with engine.connect() as conn:
+        try:
+            result = conn.execute(text("""
+                SELECT data_type FROM information_schema.columns 
+                WHERE table_name = 'appeals' AND column_name = 'status'
+            """))
+            row = result.fetchone()
+            if row and row[0] == 'USER-DEFINED':
+                conn.execute(text("""
+                    ALTER TABLE appeals ALTER COLUMN status TYPE VARCHAR USING status::VARCHAR
+                """))
+                conn.commit()
+                logger.info("✓ Migrated appeals.status from enum to varchar")
+        except Exception as e:
+            logger.warning(f"Migration check/run: {e}")
 
 app = FastAPI(title="Citizens Appeals System - Новые Люди")
 
@@ -22,6 +44,7 @@ app.add_middleware(
 )
 
 Base.metadata.create_all(bind=engine)
+run_migrations()
 
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
@@ -47,7 +70,7 @@ async def get_stats(
     current_user = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    from app.models.models import Appeal, appeal_internal_tags, appeal_public_tags, InternalTag, PublicTag, AppealStatus
+    from app.models.models import Appeal, appeal_internal_tags, appeal_public_tags, InternalTag, PublicTag
     from app.schemas.schemas import Statistics, TagStatistics
     
     status_counts = db.query(
@@ -57,10 +80,10 @@ async def get_stats(
     
     status_map = {status: count for status, count in status_counts}
     total_appeals = sum(status_map.values())
-    new_appeals = status_map.get(AppealStatus.NEW, 0)
-    in_progress_appeals = status_map.get(AppealStatus.IN_PROGRESS, 0)
-    resolved_appeals = status_map.get(AppealStatus.RESOLVED, 0)
-    rejected_appeals = status_map.get(AppealStatus.REJECTED, 0)
+    new_appeals = status_map.get("new", 0)
+    in_progress_appeals = status_map.get("in_progress", 0)
+    resolved_appeals = status_map.get("resolved", 0)
+    rejected_appeals = status_map.get("rejected", 0)
     
     public_tag_counts = db.query(
         PublicTag.id,
@@ -105,7 +128,7 @@ async def get_stats(
             extract('epoch', Appeal.updated_at) - extract('epoch', Appeal.created_at)
         ).label('avg_seconds')
     ).filter(
-        Appeal.status.in_([AppealStatus.RESOLVED, AppealStatus.REJECTED]),
+        Appeal.status.in_(["resolved", "rejected"]),
         Appeal.created_at.isnot(None),
         Appeal.updated_at.isnot(None)
     ).scalar()
@@ -365,7 +388,7 @@ async def get_appeals_by_period(
     current_user = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    from app.models.models import Appeal, AppealStatus
+    from app.models.models import Appeal
     from app.schemas.schemas import AppealsByPeriodStats
     
     now = datetime.utcnow()
@@ -385,10 +408,10 @@ async def get_appeals_by_period(
     
     query = db.query(
         func.count(Appeal.id).label('total'),
-        func.count(case((Appeal.status == AppealStatus.NEW, 1))).label('new'),
-        func.count(case((Appeal.status == AppealStatus.IN_PROGRESS, 1))).label('in_progress'),
-        func.count(case((Appeal.status == AppealStatus.RESOLVED, 1))).label('resolved'),
-        func.count(case((Appeal.status == AppealStatus.REJECTED, 1))).label('rejected')
+        func.count(case((Appeal.status == "new", 1))).label('new'),
+        func.count(case((Appeal.status == "in_progress", 1))).label('in_progress'),
+        func.count(case((Appeal.status == "resolved", 1))).label('resolved'),
+        func.count(case((Appeal.status == "rejected", 1))).label('rejected')
     )
     
     if start_time:

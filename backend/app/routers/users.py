@@ -89,15 +89,15 @@ async def get_statistics(
     current_user: UserModel = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    from app.models.models import appeal_internal_tags, appeal_public_tags, InternalTag, PublicTag, AppealStatus
+    from app.models.models import appeal_internal_tags, appeal_public_tags, InternalTag, PublicTag
     from app.schemas.schemas import TagStatistics
     from datetime import datetime
     
     total_appeals = db.query(Appeal).count()
-    new_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.NEW).count()
-    in_progress_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.IN_PROGRESS).count()
-    resolved_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.RESOLVED).count()
-    rejected_appeals = db.query(Appeal).filter(Appeal.status == AppealStatus.REJECTED).count()
+    new_appeals = db.query(Appeal).filter(Appeal.status == "new").count()
+    in_progress_appeals = db.query(Appeal).filter(Appeal.status == "in_progress").count()
+    resolved_appeals = db.query(Appeal).filter(Appeal.status == "resolved").count()
+    rejected_appeals = db.query(Appeal).filter(Appeal.status == "rejected").count()
     
     # Public tag statistics
     public_tag_stats = []
@@ -125,7 +125,7 @@ async def get_statistics(
     
     # Calculate average resolution time (from new to resolved/rejected)
     resolved_or_rejected = db.query(Appeal).filter(
-        Appeal.status.in_([AppealStatus.RESOLVED, AppealStatus.REJECTED])
+        Appeal.status.in_(["resolved", "rejected"])
     ).all()
     
     average_resolution_time = None

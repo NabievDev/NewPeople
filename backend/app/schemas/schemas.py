@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
-from app.models.models import UserRole, AppealStatus
+from app.models.models import UserRole
 
 class CategoryBase(BaseModel):
     name: str
@@ -70,7 +70,7 @@ class AppealCreate(BaseModel):
         return v
 
 class AppealUpdate(BaseModel):
-    status: Optional[AppealStatus] = None
+    status: Optional[str] = None
     public_tag_ids: Optional[List[int]] = None
     internal_tag_ids: Optional[List[int]] = None
     category_id: Optional[int] = None
@@ -87,7 +87,7 @@ class Appeal(BaseModel):
     phone: Optional[str]
     category_id: Optional[int]
     text: str
-    status: AppealStatus
+    status: str
     media_files: Optional[str]
     created_at: datetime
     updated_at: datetime

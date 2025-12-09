@@ -8,11 +8,7 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
     MODERATOR = "moderator"
 
-class AppealStatus(str, enum.Enum):
-    NEW = "new"
-    IN_PROGRESS = "in_progress"
-    RESOLVED = "resolved"
-    REJECTED = "rejected"
+DEFAULT_STATUS = "new"
 
 
 class AppealStatusConfig(Base):
@@ -95,7 +91,7 @@ class Appeal(Base):
     phone = Column(String, nullable=True)
     category_id = Column(Integer, ForeignKey('categories.id', ondelete='SET NULL'), nullable=True)
     text = Column(Text, nullable=False)
-    status = Column(Enum(AppealStatus), nullable=False, default=AppealStatus.NEW)
+    status = Column(String, nullable=False, default=DEFAULT_STATUS)
     media_files = Column(Text, nullable=True)
     telegram_user_id = Column(BigInteger, nullable=True, index=True)
     telegram_username = Column(String, nullable=True)

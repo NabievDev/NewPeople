@@ -8,7 +8,7 @@ import os
 import uuid
 from app.core.database import get_db
 from app.core.config import settings
-from app.models.models import Appeal, User, PublicTag, InternalTag, Comment, AppealHistory, HistoryActionType, AppealStatus, Category
+from app.models.models import Appeal, User, PublicTag, InternalTag, Comment, AppealHistory, HistoryActionType, Category
 from app.schemas.schemas import (
     Appeal as AppealSchema, 
     AppealCreate, 
@@ -197,8 +197,8 @@ async def update_appeal(
         raise HTTPException(status_code=404, detail="Appeal not found")
     
     if appeal_update.status is not None and appeal_update.status != appeal.status:
-        old_status = appeal.status.value if appeal.status else None
-        new_status = appeal_update.status.value if appeal_update.status else None
+        old_status = appeal.status if appeal.status else None
+        new_status = appeal_update.status if appeal_update.status else None
         add_history_entry(
             db, appeal_id, current_user.id, 
             HistoryActionType.STATUS_CHANGE,
