@@ -47,7 +47,25 @@ The system is built as a full-stack web application with a clear separation betw
 - **Database**: PostgreSQL (Neon-backed) for both development and production via DATABASE_URL.
 - **Deployment**: Backend runs on Uvicorn (port 8000), frontend served via Vite (port 5000), Telegram bot with notification server (port 3001).
 
-## Recent Changes (November 2025)
+## Recent Changes (December 2025)
+
+### Telegram Bot Major UX Improvements (December 9, 2025)
+- **Fixed Status Handling**: Changed from Enum to String type for status field to sync with backend database
+- **Dynamic Status Loading**: Bot now fetches status configurations from database instead of using hardcoded values
+- **Beautiful Message Formatting**: 
+  - Added decorative box characters (╔═╗, ║, ╚═╝) for headers
+  - Tree-style formatting (┌├└) for lists and statistics
+  - Improved visual hierarchy with separators (━━━━━)
+- **Enhanced Statistics Block**: Dynamic statistics showing all status types with counts
+- **Improved Appeal Details**: Better formatted appeal view with category, date, and status description
+- **Notification Improvements**: Beautiful notification messages with contextual headers based on status type
+- **Code Refactoring**:
+  - Removed deprecated AppealStatus enum from telegram_bot/database.py
+  - Added helper functions: get_status_display_info(), count_appeals_by_status()
+  - Fixed type hints for Optional[Bot] in main.py
+  - Updated keyboards.py to use new status display functions
+
+## Archived Changes (November 2025)
 
 ### UX Improvements & New Features (November 28, 2025)
 - **MyAppeals Page**: Created dedicated page `/my-appeals` for Telegram users to view their appeals with search, filtering by status, and sorting functionality

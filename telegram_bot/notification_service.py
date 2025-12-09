@@ -2,7 +2,7 @@ from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from database import get_status_config, get_status_emoji, get_color_emoji
+from database import get_status_display_info
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,16 +33,14 @@ async def send_status_notification(
     new_status: str
 ):
     try:
-        new_status_config = get_status_config(new_status)
-        old_status_config = get_status_config(old_status)
+        new_info = get_status_display_info(new_status)
+        old_info = get_status_display_info(old_status)
         
-        new_status_name = str(new_status_config.name) if new_status_config else new_status
-        old_status_name = str(old_status_config.name) if old_status_config else old_status
-        new_status_description = str(new_status_config.description) if new_status_config and new_status_config.description else ""
-        
-        new_emoji = get_status_emoji(new_status, str(new_status_config.color) if new_status_config and new_status_config.color else None)
-        old_emoji = get_status_emoji(old_status, str(old_status_config.color) if old_status_config and old_status_config.color else None)
-        new_color = get_color_emoji(str(new_status_config.color) if new_status_config and new_status_config.color else None)
+        new_status_name = new_info['name']
+        old_status_name = old_info['name']
+        new_emoji = new_info['emoji']
+        old_emoji = old_info['emoji']
+        new_description = new_info['description']
         
         if new_status == "resolved":
             header = "🎉 <b>Отличные новости!</b>"
@@ -57,24 +55,26 @@ async def send_status_notification(
             header = "📢 <b>Обновление статуса</b>"
             intro = "Статус вашего обращения изменился:"
         
+        description_line = f'\n<i>{new_description}</i>' if new_description else ''
+        
         message_text = f"""
-{header}
+╔══════════════════════════════╗
+   {header}
+╚══════════════════════════════╝
 
 {intro}
 
-━━━━━━━━━━━━━━━━━━━━
-
-📋 <b>Обращение #{appeal_id}</b>
+┌─────────────────────────────┐
+│ 📋 <b>Обращение #{appeal_id}</b>
+└─────────────────────────────┘
 
 {old_emoji} <s>{old_status_name}</s>
-        ⬇️
-{new_color} {new_emoji} <b>{new_status_name}</b>
+      ⬇️
+{new_emoji} <b>{new_status_name}</b>{description_line}
 
-{f'<i>{new_status_description}</i>' if new_status_description else ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-━━━━━━━━━━━━━━━━━━━━
-
-<i>Нажмите кнопку ниже для просмотра деталей</i>
+<i>👇 Нажмите кнопку для просмотра:</i>
 """
         
         await bot.send_message(

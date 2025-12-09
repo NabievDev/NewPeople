@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from database import get_status_emoji
+from database import get_status_display_info
 
 
 def get_main_menu_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
@@ -43,17 +43,20 @@ def get_appeals_list_keyboard(appeals: list, page: int = 0, page_size: int = 5) 
     page_appeals = appeals[start_idx:end_idx]
     
     for appeal in page_appeals:
-        status = appeal.status.value if hasattr(appeal.status, 'value') else str(appeal.status)
-        emoji = get_status_emoji(status)
+        status_key = str(appeal.status)
+        status_info = get_status_display_info(status_key)
+        emoji = status_info['emoji']
         
-        text_preview = appeal.text[:25] + "..." if len(appeal.text) > 25 else appeal.text
+        text_preview = str(appeal.text) if appeal.text else ""
         text_preview = text_preview.replace('\n', ' ')
+        if len(text_preview) > 20:
+            text_preview = text_preview[:20] + "..."
         
         created = appeal.created_at.strftime('%d.%m')
         
         builder.row(
             InlineKeyboardButton(
-                text=f"{emoji} #{appeal.id} | {created} | {text_preview}",
+                text=f"{emoji} #{appeal.id} • {created} • {text_preview}",
                 callback_data=f"appeal_{appeal.id}"
             )
         )
@@ -63,7 +66,7 @@ def get_appeals_list_keyboard(appeals: list, page: int = 0, page_size: int = 5) 
     
     if page > 0:
         nav_buttons.append(
-            InlineKeyboardButton(text="◀️ Назад", callback_data=f"page_{page - 1}")
+            InlineKeyboardButton(text="◀️", callback_data=f"page_{page - 1}")
         )
     
     if total_pages > 1:
@@ -73,14 +76,14 @@ def get_appeals_list_keyboard(appeals: list, page: int = 0, page_size: int = 5) 
     
     if page < total_pages - 1:
         nav_buttons.append(
-            InlineKeyboardButton(text="Вперёд ▶️", callback_data=f"page_{page + 1}")
+            InlineKeyboardButton(text="▶️", callback_data=f"page_{page + 1}")
         )
     
     if nav_buttons:
         builder.row(*nav_buttons)
     
     builder.row(
-        InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_appeals")
+        InlineKeyboardButton(text="🔄 Обновить список", callback_data="refresh_appeals")
     )
     
     builder.row(
@@ -94,11 +97,8 @@ def get_appeal_detail_keyboard(appeal_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        InlineKeyboardButton(text="◀️ К списку обращений", callback_data="my_appeals")
-    )
-    
-    builder.row(
-        InlineKeyboardButton(text="🔄 Обновить статус", callback_data=f"refresh_appeal_{appeal_id}")
+        InlineKeyboardButton(text="🔄 Обновить", callback_data=f"refresh_appeal_{appeal_id}"),
+        InlineKeyboardButton(text="◀️ К списку", callback_data="my_appeals")
     )
     
     builder.row(

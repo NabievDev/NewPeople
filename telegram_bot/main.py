@@ -18,7 +18,9 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "")
 NOTIFY_SECRET = os.environ.get("NOTIFY_SECRET", "")
 
-bot: Bot = None
+from typing import Optional
+
+bot: Optional[Bot] = None
 
 
 async def handle_notification(request):
