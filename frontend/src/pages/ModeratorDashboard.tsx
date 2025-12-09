@@ -89,9 +89,9 @@ const ModeratorDashboard: React.FC = () => {
     }
   };
 
-  const handleStatusUpdate = async (id: number, status: Appeal['status']) => {
+  const handleStatusUpdate = async (id: number, status: string) => {
     try {
-      await appealsApi.updateStatus(id, status);
+      await appealsApi.updateStatus(id, status as Appeal['status']);
       await loadData();
       if (selectedAppeal?.id === id) {
         const updated = await appealsApi.getById(id);
@@ -488,6 +488,7 @@ const ModeratorDashboard: React.FC = () => {
                 appeal={selectedAppeal}
                 tags={tags}
                 categories={categories}
+                statusConfigs={statusConfigs}
                 onStatusUpdate={handleStatusUpdate}
                 onAddTag={handleAddTag}
                 onRemoveTag={handleRemoveTag}

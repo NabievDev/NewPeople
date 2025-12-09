@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Appeal, Tag, AppealHistoryItem, FileInfo, Comment, Category } from '../types';
+import type { Appeal, Tag, AppealHistoryItem, FileInfo, Comment, Category, AppealStatusConfig } from '../types';
 import { appealsApi } from '../services/api';
 
 interface AppealDetailProps {
   appeal: Appeal;
   tags: Tag[];
   categories: Category[];
-  onStatusUpdate: (id: number, status: Appeal['status']) => void;
+  statusConfigs: AppealStatusConfig[];
+  onStatusUpdate: (id: number, status: string) => void;
   onAddTag: (appealId: number, tagId: number, tagType: 'public' | 'internal') => void;
   onRemoveTag: (appealId: number, tagId: number, tagType: 'public' | 'internal') => void;
   onAddComment: (appealId: number, content: string, files?: FileList) => void;
@@ -163,6 +164,7 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
   appeal,
   tags,
   categories,
+  statusConfigs,
   onStatusUpdate,
   onAddTag,
   onRemoveTag,
@@ -190,18 +192,9 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
     phone: appeal.phone || '',
   });
 
-  const statusColors = {
-    new: 'bg-blue-500',
-    in_progress: 'bg-yellow-500',
-    resolved: 'bg-green-500',
-    rejected: 'bg-red-500',
-  };
-
-  const statusLabels = {
-    new: 'Новое',
-    in_progress: 'В работе',
-    resolved: 'Решено',
-    rejected: 'Отклонено',
+  const getStatusLabel = (statusKey: string): string => {
+    const config = statusConfigs.find(c => c.status_key === statusKey);
+    return config?.name || statusKey;
   };
 
   const formatDate = (dateString: string) => {
@@ -301,8 +294,9 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
         phone?: string;
       } = {};
 
-      if (editForm.category_id !== (appeal.category_id || 0)) {
-        updates.category_id = editForm.category_id || null;
+      const currentCategoryId = appeal.category_id || 0;
+      if (editForm.category_id !== currentCategoryId) {
+        updates.category_id = editForm.category_id === 0 ? null : editForm.category_id;
       }
       if (editForm.text !== appeal.text) {
         updates.text = editForm.text;
@@ -387,7 +381,7 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
       case 'status_change':
         return {
           title: 'Изменение статуса',
-          description: `${statusLabels[item.old_value as keyof typeof statusLabels] || item.old_value} → ${statusLabels[item.new_value as keyof typeof statusLabels] || item.new_value}`
+          description: `${getStatusLabel(item.old_value || '')} → ${getStatusLabel(item.new_value || '')}`
         };
       case 'tag_added':
         return {
@@ -513,19 +507,20 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Статус</label>
               <div className="flex flex-wrap gap-2">
-                {(['new', 'in_progress', 'resolved', 'rejected'] as const).map((status) => (
+                {statusConfigs.map((config) => (
                   <motion.button
-                    key={status}
-                    onClick={() => onStatusUpdate(appeal.id, status)}
+                    key={config.status_key}
+                    onClick={() => onStatusUpdate(appeal.id, config.status_key)}
                     className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                      appeal.status === status
-                        ? `${statusColors[status]} text-white shadow-md`
+                      appeal.status === config.status_key
+                        ? 'text-white shadow-md'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
+                    style={appeal.status === config.status_key ? { backgroundColor: config.color || '#3B82F6' } : {}}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
-                    {statusLabels[status]}
+                    {config.name}
                   </motion.button>
                 ))}
               </div>

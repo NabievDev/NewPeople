@@ -171,7 +171,7 @@ export const appealsApi = {
     return response.data;
   },
   
-  updateStatus: async (id: number, status: Appeal['status']): Promise<Appeal> => {
+  updateStatus: async (id: number, status: string): Promise<Appeal> => {
     const response = await api.put<Appeal>(`/appeals/${id}`, { status });
     return response.data;
   },
