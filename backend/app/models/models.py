@@ -129,6 +129,9 @@ class HistoryActionType(str, enum.Enum):
     COMMENT_ADDED = "comment_added"
     FILE_ADDED = "file_added"
     FILE_REMOVED = "file_removed"
+    CATEGORY_CHANGED = "category_changed"
+    TEXT_EDITED = "text_edited"
+    CONTACT_UPDATED = "contact_updated"
 
 
 class AppealHistory(Base):
@@ -145,3 +148,12 @@ class AppealHistory(Base):
     
     appeal = relationship("Appeal", back_populates="history")
     user = relationship("User")
+
+
+class AdminTelegramId(Base):
+    __tablename__ = "admin_telegram_ids"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    telegram_id = Column(BigInteger, unique=True, nullable=False)
+    name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -8,7 +8,7 @@ import os
 import uuid
 from app.core.database import get_db
 from app.core.config import settings
-from app.models.models import Appeal, User, PublicTag, InternalTag, Comment, AppealHistory, HistoryActionType, AppealStatus
+from app.models.models import Appeal, User, PublicTag, InternalTag, Comment, AppealHistory, HistoryActionType, AppealStatus, Category
 from app.schemas.schemas import (
     Appeal as AppealSchema, 
     AppealCreate, 
@@ -18,7 +18,7 @@ from app.schemas.schemas import (
     AppealHistoryItem
 )
 from app.routers.auth import get_current_user
-from app.services.telegram_notifier import notify_status_change
+from app.services.telegram_notifier import notify_status_change, notify_new_appeal_to_admins
 
 router = APIRouter(prefix="/appeals", tags=["appeals"])
 
@@ -36,6 +36,7 @@ def add_history_entry(db: Session, appeal_id: int, user_id: int, action_type: Hi
 
 @router.post("", response_model=AppealSchema)
 async def create_appeal(
+    background_tasks: BackgroundTasks,
     is_anonymous: bool = Form(False),
     author_name: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
@@ -47,6 +48,8 @@ async def create_appeal(
     files: Optional[List[UploadFile]] = File(None),
     db: Session = Depends(get_db)
 ):
+    from app.models.models import Category
+    
     if not is_anonymous and not email and not telegram_user_id:
         raise HTTPException(status_code=400, detail="Email is required for non-anonymous appeals")
     
@@ -83,6 +86,22 @@ async def create_appeal(
     db.add(appeal)
     db.commit()
     db.refresh(appeal)
+    
+    category_name = None
+    if category_id:
+        category = db.query(Category).filter(Category.id == category_id).first()
+        if category:
+            category_name = category.name
+    
+    background_tasks.add_task(
+        notify_new_appeal_to_admins,
+        appeal.id,
+        text,
+        category_name,
+        is_anonymous,
+        db
+    )
+    
     return appeal
 
 @router.get("/search")
@@ -248,6 +267,60 @@ async def update_appeal(
                 )
         
         appeal.internal_tags = db.query(InternalTag).filter(InternalTag.id.in_(appeal_update.internal_tag_ids)).all()
+    
+    if appeal_update.category_id is not None and appeal_update.category_id != appeal.category_id:
+        old_category = db.query(Category).filter(Category.id == appeal.category_id).first() if appeal.category_id else None
+        new_category = db.query(Category).filter(Category.id == appeal_update.category_id).first() if appeal_update.category_id else None
+        old_name = old_category.name if old_category else "Не указана"
+        new_name = new_category.name if new_category else "Не указана"
+        add_history_entry(
+            db, appeal_id, current_user.id,
+            HistoryActionType.CATEGORY_CHANGED,
+            old_value=old_name,
+            new_value=new_name
+        )
+        appeal.category_id = appeal_update.category_id if appeal_update.category_id != 0 else None
+    
+    if appeal_update.text is not None and appeal_update.text != appeal.text:
+        add_history_entry(
+            db, appeal_id, current_user.id,
+            HistoryActionType.TEXT_EDITED,
+            old_value=appeal.text[:200] if appeal.text else None,
+            new_value=appeal_update.text[:200]
+        )
+        appeal.text = appeal_update.text
+    
+    contact_changes = []
+    if appeal_update.author_name is not None and appeal_update.author_name != appeal.author_name:
+        contact_changes.append({
+            "field": "author_name",
+            "old": appeal.author_name,
+            "new": appeal_update.author_name
+        })
+        appeal.author_name = appeal_update.author_name
+    
+    if appeal_update.email is not None and appeal_update.email != appeal.email:
+        contact_changes.append({
+            "field": "email",
+            "old": appeal.email,
+            "new": appeal_update.email
+        })
+        appeal.email = appeal_update.email
+    
+    if appeal_update.phone is not None and appeal_update.phone != appeal.phone:
+        contact_changes.append({
+            "field": "phone",
+            "old": appeal.phone,
+            "new": appeal_update.phone
+        })
+        appeal.phone = appeal_update.phone
+    
+    if contact_changes:
+        add_history_entry(
+            db, appeal_id, current_user.id,
+            HistoryActionType.CONTACT_UPDATED,
+            details=json.dumps(contact_changes)
+        )
     
     db.commit()
     db.refresh(appeal)

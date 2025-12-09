@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Appeal, Tag, AppealHistoryItem, FileInfo, Comment } from '../types';
+import type { Appeal, Tag, AppealHistoryItem, FileInfo, Comment, Category } from '../types';
 import { appealsApi } from '../services/api';
 
 interface AppealDetailProps {
   appeal: Appeal;
   tags: Tag[];
+  categories: Category[];
   onStatusUpdate: (id: number, status: Appeal['status']) => void;
   onAddTag: (appealId: number, tagId: number, tagType: 'public' | 'internal') => void;
   onRemoveTag: (appealId: number, tagId: number, tagType: 'public' | 'internal') => void;
@@ -161,11 +162,13 @@ const getHistoryIcon = (actionType: string) => {
 const AppealDetail: React.FC<AppealDetailProps> = ({
   appeal,
   tags,
+  categories,
   onStatusUpdate,
   onAddTag,
   onRemoveTag,
   onAddComment,
   onClose,
+  onRefresh,
 }) => {
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [commentText, setCommentText] = useState('');
@@ -176,6 +179,16 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingComments, setLoadingComments] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    category_id: appeal.category_id || 0,
+    text: appeal.text,
+    author_name: appeal.author_name || '',
+    email: appeal.email || '',
+    phone: appeal.phone || '',
+  });
 
   const statusColors = {
     new: 'bg-blue-500',
@@ -206,6 +219,14 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
     setComments([]);
     setHistory([]);
     setActiveTab('details');
+    setIsEditing(false);
+    setEditForm({
+      category_id: appeal.category_id || 0,
+      text: appeal.text,
+      author_name: appeal.author_name || '',
+      email: appeal.email || '',
+      phone: appeal.phone || '',
+    });
   }, [appeal.id]);
 
   useEffect(() => {
@@ -246,6 +267,70 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
   const availableInternalTags = internalTags.filter(
     (tag) => !appeal.internal_tags?.some((t) => t.id === tag.id)
   );
+
+  const handleStartEdit = () => {
+    setEditForm({
+      category_id: appeal.category_id || 0,
+      text: appeal.text,
+      author_name: appeal.author_name || '',
+      email: appeal.email || '',
+      phone: appeal.phone || '',
+    });
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditForm({
+      category_id: appeal.category_id || 0,
+      text: appeal.text,
+      author_name: appeal.author_name || '',
+      email: appeal.email || '',
+      phone: appeal.phone || '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    setIsSaving(true);
+    try {
+      const updates: {
+        category_id?: number | null;
+        text?: string;
+        author_name?: string;
+        email?: string;
+        phone?: string;
+      } = {};
+
+      if (editForm.category_id !== (appeal.category_id || 0)) {
+        updates.category_id = editForm.category_id || null;
+      }
+      if (editForm.text !== appeal.text) {
+        updates.text = editForm.text;
+      }
+      if (editForm.author_name !== (appeal.author_name || '')) {
+        updates.author_name = editForm.author_name;
+      }
+      if (editForm.email !== (appeal.email || '')) {
+        updates.email = editForm.email;
+      }
+      if (editForm.phone !== (appeal.phone || '')) {
+        updates.phone = editForm.phone;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await appealsApi.update(appeal.id, updates);
+        if (onRefresh) {
+          onRefresh();
+        }
+      }
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Failed to save appeal:', error);
+      alert('Ошибка при сохранении изменений');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleAddComment = async () => {
     if (commentText.trim()) {
@@ -328,6 +413,29 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
         return {
           title: 'Удалён файл',
           description: details.filename || ''
+        };
+      case 'category_changed':
+        return {
+          title: 'Изменена категория',
+          description: `${item.old_value || 'Не указана'} → ${item.new_value || 'Не указана'}`
+        };
+      case 'text_edited':
+        return {
+          title: 'Изменён текст обращения',
+          description: ''
+        };
+      case 'contact_updated':
+        const contactFields = details.map?.((c: { field: string; old: string; new: string }) => {
+          const fieldNames: Record<string, string> = {
+            'author_name': 'Имя автора',
+            'email': 'Email',
+            'phone': 'Телефон'
+          };
+          return fieldNames[c.field] || c.field;
+        }) || [];
+        return {
+          title: 'Обновлены контактные данные',
+          description: contactFields.join(', ')
         };
       default:
         return {
@@ -424,61 +532,166 @@ const AppealDetail: React.FC<AppealDetailProps> = ({
             </div>
 
             <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Информация</h4>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium text-gray-700">Информация</h4>
+                {!isEditing && (
+                  <button
+                    onClick={handleStartEdit}
+                    className="flex items-center gap-1 text-primary hover:text-primary-700 text-sm font-medium"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Редактировать
+                  </button>
+                )}
+              </div>
               <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  <div>
-                    <p className="text-xs text-gray-500">Автор</p>
-                    <p className="text-sm font-medium text-gray-900">
-                      {appeal.is_anonymous ? 'Анонимное обращение' : appeal.author_name}
-                    </p>
-                  </div>
-                </div>
-                {!appeal.is_anonymous && appeal.email && (
-                  <div className="flex items-center gap-3">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
+                {isEditing ? (
+                  <>
+                    {!appeal.is_anonymous && (
+                      <>
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Имя автора</label>
+                          <input
+                            type="text"
+                            value={editForm.author_name}
+                            onChange={(e) => setEditForm({ ...editForm, author_name: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                            placeholder="Имя автора"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Email</label>
+                          <input
+                            type="email"
+                            value={editForm.email}
+                            onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                            placeholder="Email"
+                          />
+                        </div>
+                      </>
+                    )}
                     <div>
-                      <p className="text-xs text-gray-500">Email</p>
-                      <p className="text-sm font-medium text-gray-900">{appeal.email}</p>
+                      <label className="text-xs text-gray-500 block mb-1">Телефон</label>
+                      <input
+                        type="tel"
+                        value={editForm.phone}
+                        onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                        placeholder="Телефон"
+                      />
                     </div>
-                  </div>
-                )}
-                {appeal.phone && (
-                  <div className="flex items-center gap-3">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                    </svg>
                     <div>
-                      <p className="text-xs text-gray-500">Телефон</p>
-                      <p className="text-sm font-medium text-gray-900">{appeal.phone}</p>
+                      <label className="text-xs text-gray-500 block mb-1">Категория</label>
+                      <select
+                        value={editForm.category_id}
+                        onChange={(e) => setEditForm({ ...editForm, category_id: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                      >
+                        <option value={0}>Не выбрана</option>
+                        {categories.map((cat) => (
+                          <option key={cat.id} value={cat.id}>{cat.name}</option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
-                )}
-                {appeal.category && (
-                  <div className="flex items-center gap-3">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                    <div>
-                      <p className="text-xs text-gray-500">Категория</p>
-                      <p className="text-sm font-medium text-gray-900">{appeal.category.name}</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <div>
+                        <p className="text-xs text-gray-500">Автор</p>
+                        <p className="text-sm font-medium text-gray-900">
+                          {appeal.is_anonymous ? 'Анонимное обращение' : appeal.author_name}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                    {!appeal.is_anonymous && appeal.email && (
+                      <div className="flex items-center gap-3">
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        <div>
+                          <p className="text-xs text-gray-500">Email</p>
+                          <p className="text-sm font-medium text-gray-900">{appeal.email}</p>
+                        </div>
+                      </div>
+                    )}
+                    {appeal.phone && (
+                      <div className="flex items-center gap-3">
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                        </svg>
+                        <div>
+                          <p className="text-xs text-gray-500">Телефон</p>
+                          <p className="text-sm font-medium text-gray-900">{appeal.phone}</p>
+                        </div>
+                      </div>
+                    )}
+                    {appeal.category && (
+                      <div className="flex items-center gap-3">
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                        <div>
+                          <p className="text-xs text-gray-500">Категория</p>
+                          <p className="text-sm font-medium text-gray-900">{appeal.category.name}</p>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
 
             <div>
               <h4 className="text-sm font-medium text-gray-700 mb-2">Текст обращения</h4>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{appeal.text}</p>
-              </div>
+              {isEditing ? (
+                <textarea
+                  value={editForm.text}
+                  onChange={(e) => setEditForm({ ...editForm, text: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none text-sm"
+                  rows={6}
+                  placeholder="Текст обращения"
+                />
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{appeal.text}</p>
+                </div>
+              )}
             </div>
+
+            {isEditing && (
+              <div className="flex gap-3 pt-2">
+                <motion.button
+                  onClick={handleSaveEdit}
+                  disabled={isSaving}
+                  className="btn-primary flex items-center gap-2 disabled:opacity-50"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {isSaving ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                  Сохранить
+                </motion.button>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={isSaving}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors disabled:opacity-50"
+                >
+                  Отмена
+                </button>
+              </div>
+            )}
 
             {mediaFiles.length > 0 && (
               <div>

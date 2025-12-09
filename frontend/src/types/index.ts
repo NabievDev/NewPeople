@@ -47,7 +47,7 @@ export interface AppealHistoryItem {
   appeal_id: number;
   user_id: number;
   user?: User;
-  action_type: 'status_change' | 'tag_added' | 'tag_removed' | 'comment_added' | 'file_added' | 'file_removed';
+  action_type: 'status_change' | 'tag_added' | 'tag_removed' | 'comment_added' | 'file_added' | 'file_removed' | 'category_changed' | 'text_edited' | 'contact_updated';
   old_value?: string;
   new_value?: string;
   details?: string; // JSON string with additional info
@@ -232,5 +232,12 @@ export interface AppealStatusConfig {
   description?: string;
   order: number;
   is_system: boolean;
+  created_at: string;
+}
+
+export interface AdminTelegramId {
+  id: number;
+  telegram_id: number;
+  name?: string;
   created_at: string;
 }

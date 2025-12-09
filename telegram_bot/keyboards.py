@@ -1,5 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from database import get_status_emoji
 
 
 def get_main_menu_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
@@ -41,16 +42,9 @@ def get_appeals_list_keyboard(appeals: list, page: int = 0, page_size: int = 5) 
     end_idx = start_idx + page_size
     page_appeals = appeals[start_idx:end_idx]
     
-    status_emoji = {
-        "new": "🆕",
-        "in_progress": "🔄",
-        "resolved": "✅",
-        "rejected": "❌"
-    }
-    
     for appeal in page_appeals:
         status = appeal.status.value if hasattr(appeal.status, 'value') else str(appeal.status)
-        emoji = status_emoji.get(status, "📋")
+        emoji = get_status_emoji(status)
         
         text_preview = appeal.text[:25] + "..." if len(appeal.text) > 25 else appeal.text
         text_preview = text_preview.replace('\n', ' ')

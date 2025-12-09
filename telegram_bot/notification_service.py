@@ -2,24 +2,10 @@ from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from database import get_status_config
+from database import get_status_config, get_status_emoji, get_color_emoji
 import logging
 
 logger = logging.getLogger(__name__)
-
-STATUS_EMOJI = {
-    "new": "🆕",
-    "in_progress": "🔄",
-    "resolved": "✅",
-    "rejected": "❌"
-}
-
-STATUS_COLORS = {
-    "new": "🔵",
-    "in_progress": "🟡",
-    "resolved": "🟢",
-    "rejected": "🔴"
-}
 
 
 def get_notification_keyboard(appeal_id: int) -> InlineKeyboardMarkup:
@@ -50,13 +36,13 @@ async def send_status_notification(
         new_status_config = get_status_config(new_status)
         old_status_config = get_status_config(old_status)
         
-        new_status_name = new_status_config.name if new_status_config else new_status
-        old_status_name = old_status_config.name if old_status_config else old_status
-        new_status_description = new_status_config.description if new_status_config else ""
+        new_status_name = str(new_status_config.name) if new_status_config else new_status
+        old_status_name = str(old_status_config.name) if old_status_config else old_status
+        new_status_description = str(new_status_config.description) if new_status_config and new_status_config.description else ""
         
-        new_emoji = STATUS_EMOJI.get(new_status, "📋")
-        old_emoji = STATUS_EMOJI.get(old_status, "📋")
-        new_color = STATUS_COLORS.get(new_status, "⚪")
+        new_emoji = get_status_emoji(new_status, str(new_status_config.color) if new_status_config and new_status_config.color else None)
+        old_emoji = get_status_emoji(old_status, str(old_status_config.color) if old_status_config and old_status_config.color else None)
+        new_color = get_color_emoji(str(new_status_config.color) if new_status_config and new_status_config.color else None)
         
         if new_status == "resolved":
             header = "🎉 <b>Отличные новости!</b>"

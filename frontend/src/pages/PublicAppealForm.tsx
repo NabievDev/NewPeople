@@ -14,6 +14,7 @@ const PublicAppealForm: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [consentGiven, setConsentGiven] = useState(false);
 
   const telegramWebApp = useMemo(() => {
     if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
@@ -97,6 +98,7 @@ const PublicAppealForm: React.FC = () => {
       setSelectedFile(null);
       setSelectedCategory(undefined);
       setIsAnonymous(false);
+      setConsentGiven(false);
     } catch (error) {
       console.error('Failed to submit appeal:', error);
       if (telegramWebApp) {
@@ -112,6 +114,7 @@ const PublicAppealForm: React.FC = () => {
     setStep('category');
     setSelectedCategory(undefined);
     setIsAnonymous(false);
+    setConsentGiven(false);
     reset();
   };
 
@@ -450,13 +453,58 @@ const PublicAppealForm: React.FC = () => {
                     <FileUpload onFileSelect={setSelectedFile} selectedFile={selectedFile} />
                   </div>
 
+                  <AnimatePresence>
+                    {!isAnonymous && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-4 bg-gradient-to-r from-primary/5 to-primary/10 rounded-xl border border-primary/20">
+                          <label className="flex items-center gap-3 cursor-pointer">
+                            <div className="relative">
+                              <input
+                                type="checkbox"
+                                checked={consentGiven}
+                                onChange={(e) => setConsentGiven(e.target.checked)}
+                                className="sr-only peer"
+                              />
+                              <div className="w-6 h-6 rounded-lg border-2 border-primary/30 peer-checked:bg-primary peer-checked:border-primary transition-all flex items-center justify-center">
+                                {consentGiven && (
+                                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <span className="font-medium text-gray-900">
+                                Я согласен на{' '}
+                                <a
+                                  href="https://google.com"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:text-primary-700 underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  обработку персональных данных
+                                </a>
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   <div className="flex flex-col sm:flex-row gap-3 pt-4">
                     <motion.button 
                       type="submit" 
-                      disabled={isSubmitting} 
+                      disabled={isSubmitting || (!isAnonymous && !consentGiven)} 
                       className="flex-1 px-6 py-4 bg-gradient-to-r from-primary to-primary-600 text-white font-semibold rounded-xl shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      whileHover={{ scale: isSubmitting ? 1 : 1.02 }}
-                      whileTap={{ scale: isSubmitting ? 1 : 0.98 }}
+                      whileHover={{ scale: (isSubmitting || (!isAnonymous && !consentGiven)) ? 1 : 1.02 }}
+                      whileTap={{ scale: (isSubmitting || (!isAnonymous && !consentGiven)) ? 1 : 0.98 }}
                     >
                       {isSubmitting ? (
                         <span className="flex items-center justify-center gap-2">

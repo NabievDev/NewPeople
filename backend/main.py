@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import List, Literal
 import os
 from app.core.database import engine, Base, get_db
-from app.routers import auth, appeals, categories, tags, users, statuses
+from app.routers import auth, appeals, categories, tags, users, statuses, admin_notifications
 from app.routers.auth import get_current_user, require_admin
 from app.schemas.schemas import TimelineDataPoint, ModeratorStats, AppealsByPeriodStats
 
@@ -32,6 +32,7 @@ app.include_router(categories.router, prefix="/api")
 app.include_router(tags.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(statuses.router, prefix="/api")
+app.include_router(admin_notifications.router, prefix="/api")
 
 @app.get("/")
 async def root():

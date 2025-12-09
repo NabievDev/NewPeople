@@ -63,6 +63,75 @@ async def handle_notification(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def handle_admin_notification(request):
+    global bot
+    
+    if NOTIFY_SECRET:
+        auth_header = request.headers.get("Authorization", "")
+        expected_header = f"Bearer {NOTIFY_SECRET}"
+        if auth_header != expected_header:
+            logger.warning("Unauthorized admin notification request")
+            return web.json_response({"error": "Unauthorized"}, status=401)
+    
+    if not bot:
+        return web.json_response({"error": "Bot not initialized"}, status=500)
+    
+    try:
+        data = await request.json()
+        
+        appeal_id = data.get("appeal_id")
+        text_preview = data.get("text_preview", "")
+        category_name = data.get("category_name", "Без категории")
+        is_anonymous = data.get("is_anonymous", False)
+        admin_telegram_ids = data.get("admin_telegram_ids", [])
+        
+        if not appeal_id or not admin_telegram_ids:
+            return web.json_response({"error": "Missing required fields"}, status=400)
+        
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        
+        moderator_url = f"{WEBAPP_URL}/moderator" if WEBAPP_URL else "#"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Открыть панель модератора", url=moderator_url)]
+        ])
+        
+        author_type = "👤 Анонимное" if is_anonymous else "👤 С контактами"
+        
+        message_text = f"""
+🆕 <b>Новое обращение #{appeal_id}</b>
+
+📂 <b>Категория:</b> {category_name}
+{author_type}
+
+📝 <b>Текст:</b>
+<i>{text_preview[:300]}{'...' if len(text_preview) > 300 else ''}</i>
+
+━━━━━━━━━━━━━━━━━━━━
+
+<i>Нажмите кнопку ниже для перехода к модерации</i>
+"""
+        
+        sent_count = 0
+        for telegram_id in admin_telegram_ids:
+            try:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=message_text,
+                    reply_markup=keyboard
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"Failed to send admin notification to {telegram_id}: {e}")
+        
+        logger.info(f"Admin notification sent for appeal {appeal_id} to {sent_count}/{len(admin_telegram_ids)} admins")
+        return web.json_response({"status": "sent", "sent_count": sent_count})
+            
+    except Exception as e:
+        logger.error(f"Error handling admin notification request: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 async def health_check(request):
     return web.json_response({"status": "ok", "bot_running": bot is not None})
 
@@ -70,6 +139,7 @@ async def health_check(request):
 async def start_web_server():
     app = web.Application()
     app.router.add_post('/notify', handle_notification)
+    app.router.add_post('/notify_admins', handle_admin_notification)
     app.router.add_get('/health', health_check)
     
     runner = web.AppRunner(app)

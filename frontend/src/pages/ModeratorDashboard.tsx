@@ -487,6 +487,7 @@ const ModeratorDashboard: React.FC = () => {
               <AppealDetail
                 appeal={selectedAppeal}
                 tags={tags}
+                categories={categories}
                 onStatusUpdate={handleStatusUpdate}
                 onAddTag={handleAddTag}
                 onRemoveTag={handleRemoveTag}

@@ -13,32 +13,19 @@ from keyboards import (
     get_back_to_menu_keyboard,
     get_webapp_appeals_keyboard
 )
-from database import get_user_appeals, get_appeal_by_id, get_status_config, get_category_name
+from database import (
+    get_user_appeals, 
+    get_appeal_by_id, 
+    get_status_config, 
+    get_category_name,
+    get_all_status_configs,
+    get_status_emoji,
+    get_color_emoji
+)
 
 router = Router()
 
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "")
-
-STATUS_NAMES = {
-    "new": "Новое",
-    "in_progress": "В работе",
-    "resolved": "Решено",
-    "rejected": "Отклонено"
-}
-
-STATUS_EMOJI = {
-    "new": "🆕",
-    "in_progress": "🔄",
-    "resolved": "✅",
-    "rejected": "❌"
-}
-
-STATUS_DESCRIPTIONS = {
-    "new": "Ваше обращение принято и ожидает рассмотрения",
-    "in_progress": "Специалисты работают над вашим обращением",
-    "resolved": "Ваше обращение успешно обработано",
-    "rejected": "К сожалению, обращение было отклонено"
-}
 
 
 def get_webapp_url():
@@ -237,15 +224,15 @@ async def show_appeal_detail(callback: CallbackQuery):
     status_value = appeal.status.value if hasattr(appeal.status, 'value') else str(appeal.status)
     status_config = get_status_config(status_value)
     
-    status_name = status_config.name if status_config else STATUS_NAMES.get(status_value, status_value)
-    status_emoji = STATUS_EMOJI.get(status_value, "📋")
-    status_description = status_config.description if status_config else STATUS_DESCRIPTIONS.get(status_value, "")
+    status_name = str(status_config.name) if status_config else status_value
+    status_emoji = get_status_emoji(status_value, str(status_config.color) if status_config and status_config.color else None)
+    status_description = str(status_config.description) if status_config and status_config.description else ""
     
-    category_name = get_category_name(appeal.category_id) if appeal.category_id else "Не указана"
+    category_name = get_category_name(int(appeal.category_id)) if appeal.category_id else "Не указана"
     
-    created_date = format_date(appeal.created_at)
+    created_date = format_date(appeal.created_at)  # type: ignore[arg-type]
     
-    text_preview = appeal.text
+    text_preview = str(appeal.text) if appeal.text else ""
     if len(text_preview) > 800:
         text_preview = text_preview[:800] + "..."
     
@@ -559,14 +546,14 @@ async def refresh_appeal_detail(callback: CallbackQuery):
     status_value = appeal.status.value if hasattr(appeal.status, 'value') else str(appeal.status)
     status_config = get_status_config(status_value)
     
-    status_name = status_config.name if status_config else STATUS_NAMES.get(status_value, status_value)
-    status_emoji = STATUS_EMOJI.get(status_value, "📋")
-    status_description = status_config.description if status_config else STATUS_DESCRIPTIONS.get(status_value, "")
+    status_name = str(status_config.name) if status_config else status_value
+    status_emoji = get_status_emoji(status_value, str(status_config.color) if status_config and status_config.color else None)
+    status_description = str(status_config.description) if status_config and status_config.description else ""
     
-    category_name = get_category_name(appeal.category_id) if appeal.category_id else "Не указана"
-    created_date = format_date(appeal.created_at)
+    category_name = get_category_name(int(appeal.category_id)) if appeal.category_id else "Не указана"
+    created_date = format_date(appeal.created_at)  # type: ignore[arg-type]
     
-    text_preview = appeal.text
+    text_preview = str(appeal.text) if appeal.text else ""
     if len(text_preview) > 800:
         text_preview = text_preview[:800] + "..."
     

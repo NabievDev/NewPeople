@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Category, Tag, Appeal, AppealCreate, LoginCredentials, AuthToken, User, Comment, AppealHistoryItem, Statistics, TimelineDataPoint, ModeratorStats, AppealsByPeriodStats, TimePeriod, AppealStatusConfig } from '../types';
+import type { Category, Tag, Appeal, AppealCreate, LoginCredentials, AuthToken, User, Comment, AppealHistoryItem, Statistics, TimelineDataPoint, ModeratorStats, AppealsByPeriodStats, TimePeriod, AppealStatusConfig, AdminTelegramId } from '../types';
 
 export type { AppealStatusConfig } from '../types';
 
@@ -176,6 +176,18 @@ export const appealsApi = {
     return response.data;
   },
   
+  update: async (id: number, data: {
+    status?: Appeal['status'];
+    category_id?: number | null;
+    text?: string;
+    author_name?: string;
+    email?: string;
+    phone?: string;
+  }): Promise<Appeal> => {
+    const response = await api.put<Appeal>(`/appeals/${id}`, data);
+    return response.data;
+  },
+  
   updateTags: async (id: number, publicTagIds: number[], internalTagIds: number[]): Promise<Appeal> => {
     const response = await api.put<Appeal>(`/appeals/${id}`, { 
       public_tag_ids: publicTagIds,
@@ -288,6 +300,22 @@ export const statusesApi = {
   
   delete: async (id: number): Promise<void> => {
     await api.delete(`/statuses/${id}`);
+  },
+};
+
+export const adminTelegramIdsApi = {
+  getAll: async (): Promise<AdminTelegramId[]> => {
+    const response = await api.get<AdminTelegramId[]>('/admin-telegram-ids');
+    return response.data;
+  },
+  
+  create: async (data: { telegram_id: number; name?: string }): Promise<AdminTelegramId> => {
+    const response = await api.post<AdminTelegramId>('/admin-telegram-ids', data);
+    return response.data;
+  },
+  
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/admin-telegram-ids/${id}`);
   },
 };
 

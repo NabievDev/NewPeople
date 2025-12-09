@@ -73,6 +73,11 @@ class AppealUpdate(BaseModel):
     status: Optional[AppealStatus] = None
     public_tag_ids: Optional[List[int]] = None
     internal_tag_ids: Optional[List[int]] = None
+    category_id: Optional[int] = None
+    text: Optional[str] = None
+    author_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
 
 class Appeal(BaseModel):
     id: int
@@ -226,3 +231,18 @@ class AppealsByPeriodStats(BaseModel):
     in_progress: int
     resolved: int
     rejected: int
+
+
+class AdminTelegramIdBase(BaseModel):
+    telegram_id: int
+    name: Optional[str] = None
+
+class AdminTelegramIdCreate(AdminTelegramIdBase):
+    pass
+
+class AdminTelegramId(AdminTelegramIdBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True

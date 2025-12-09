@@ -2,6 +2,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, B
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
+from typing import Optional
 import enum
 import os
 
@@ -142,3 +143,45 @@ def get_category_name(category_id: int):
         return category.name if category else "Не указана"
     finally:
         db.close()
+
+
+def get_all_status_configs():
+    db = SessionLocal()
+    try:
+        configs = db.query(AppealStatusConfig).filter(
+            AppealStatusConfig.status_key.isnot(None),
+            AppealStatusConfig.status_key != ""
+        ).order_by(AppealStatusConfig.order).all()
+        return configs
+    finally:
+        db.close()
+
+
+STATUS_EMOJI_MAP = {
+    "new": "🆕",
+    "in_progress": "🔄",
+    "resolved": "✅",
+    "rejected": "❌"
+}
+
+COLOR_EMOJI_MAP = {
+    "#3B82F6": "🔵",
+    "#F59E0B": "🟡",
+    "#10B981": "🟢",
+    "#EF4444": "🔴",
+    "#6B7280": "⚪"
+}
+
+
+def get_status_emoji(status_key: str, color: Optional[str] = None) -> str:
+    if status_key in STATUS_EMOJI_MAP:
+        return STATUS_EMOJI_MAP[status_key]
+    if color and color in COLOR_EMOJI_MAP:
+        return COLOR_EMOJI_MAP[color]
+    return "📋"
+
+
+def get_color_emoji(color: Optional[str]) -> str:
+    if color is None:
+        return "⚪"
+    return COLOR_EMOJI_MAP.get(color, "⚪")
