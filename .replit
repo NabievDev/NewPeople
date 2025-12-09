@@ -86,10 +86,6 @@ localPort = 35631
 externalPort = 6000
 
 [[ports]]
-localPort = 38669
-externalPort = 8008
-
-[[ports]]
 localPort = 40673
 externalPort = 5000
 
@@ -116,7 +112,7 @@ packages = ["cargo", "libiconv", "libxcrypt", "rustc"]
 [userenv]
 
 [userenv.shared]
-WEBAPP_URL = "https://1a48c395-754e-4055-901f-b7ac54280c46-00-dxt0dwlqj5r1.kirk.replit.dev"
+WEBAPP_URL = "https://9ea532fb-e1a6-4806-8fd7-5b761ec97dcd-00-946x1k5quvuk.worf.replit.dev"
 TELEGRAM_BOT_URL = "http://localhost:3001"
 NOTIFY_SECRET = "J0C3ifxeuJIvBRmQjSG1mFMMfilXYtLuGG1BwfyHalk"
 TELEGRAM_BOT_TOKEN = "8341963067:AAEvJ_zi0RaXKiSjE9yVLGpeOtLjUAtpG08"
