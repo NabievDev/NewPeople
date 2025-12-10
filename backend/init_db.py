@@ -147,4 +147,6 @@ def init_database():
         db.close()
 
 if __name__ == "__main__":
+    print("Note: Database initialization now runs automatically when starting main.py")
+    print("This script can still be used for manual initialization if needed.\n")
     init_database()

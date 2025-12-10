@@ -49,6 +49,13 @@ The system is built as a full-stack web application with a clear separation betw
 
 ## Recent Changes (December 2025)
 
+### Database Auto-Initialization (December 10, 2025)
+- **Automatic DB Setup**: Backend `main.py` now automatically initializes database on startup
+- **No manual init_db.py required**: Tables, users, categories, tags, and statuses are created automatically if missing
+- **SQLite/PostgreSQL support**: Works with both database types via DATABASE_URL
+- **Default credentials**: admin/admin123, moderator/moderator123 created automatically
+- **README updated**: Comprehensive documentation with Docker, deployment, and API info
+
 ### Telegram Bot Major UX Improvements (December 9, 2025)
 - **Fixed Status Handling**: Changed from Enum to String type for status field to sync with backend database
 - **Dynamic Status Loading**: Bot now fetches status configurations from database instead of using hardcoded values

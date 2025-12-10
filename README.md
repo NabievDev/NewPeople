@@ -41,6 +41,7 @@
 - Управление статусами и тегами
 - Просмотр статистики и аналитики
 - Drag-and-drop сортировка элементов
+- Настройка уведомлений для Telegram
 
 ---
 
@@ -51,7 +52,7 @@
 |------------|-----------|
 | **FastAPI** | REST API сервер |
 | **SQLAlchemy** | ORM для работы с БД |
-| **PostgreSQL** | База данных |
+| **SQLite / PostgreSQL** | База данных |
 | **Pydantic** | Валидация данных |
 | **python-jose** | JWT аутентификация |
 | **bcrypt** | Хеширование паролей |
@@ -89,8 +90,8 @@
 │   │   ├── schemas/        # Pydantic схемы
 │   │   └── services/       # Бизнес-логика
 │   ├── uploads/            # Загруженные файлы
-│   ├── init_db.py          # Инициализация БД
-│   └── main.py             # Точка входа
+│   ├── init_db.py          # Ручная инициализация БД (опционально)
+│   └── main.py             # Точка входа (автоинициализация БД)
 │
 ├── frontend/               # Frontend приложение
 │   ├── src/
@@ -109,10 +110,26 @@
 │   ├── notification_service.py  # Уведомления
 │   └── main.py             # Точка входа
 │
+├── docker-compose.yml      # Docker конфигурация
 ├── start.sh               # Скрипт запуска (Linux/macOS)
 ├── start.bat              # Скрипт запуска (Windows)
 └── README.md              # Документация
 ```
+
+---
+
+## Автоматическая инициализация базы данных
+
+При запуске backend (`main.py`) автоматически выполняется:
+
+1. **Создание таблиц** — если база данных пуста или не существует
+2. **Создание администратора** — `admin` / `admin123`
+3. **Создание модератора** — `moderator` / `moderator123`
+4. **Создание категорий** — базовый набор категорий обращений
+5. **Создание тегов** — публичные и внутренние теги
+6. **Создание статусов** — new, in_progress, resolved, rejected
+
+Ручной запуск `init_db.py` не требуется — всё происходит автоматически!
 
 ---
 
@@ -122,15 +139,17 @@
 
 - Python 3.11+
 - Node.js 20+
-- PostgreSQL 14+
+- (Опционально) PostgreSQL 14+ для production
 
 ### Переменные окружения
 
 Создайте файл `.env` в корне проекта:
 
 ```env
-# База данных
-DATABASE_URL=postgresql://user:password@localhost:5432/appeals_db
+# База данных (SQLite по умолчанию)
+DATABASE_URL=sqlite:///./citizens_appeals.db
+# Или для PostgreSQL:
+# DATABASE_URL=postgresql://user:password@localhost:5432/appeals_db
 
 # Telegram бот
 TELEGRAM_BOT_TOKEN=ваш_токен_бота
@@ -159,34 +178,19 @@ start.bat
 
 ### Ручная установка
 
-#### 1. База данных
-
-```bash
-# Создайте базу данных PostgreSQL
-createdb appeals_db
-```
-
-#### 2. Backend
+#### 1. Backend
 
 ```bash
 cd backend
 
-# Создайте виртуальное окружение (опционально)
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-venv\Scripts\activate     # Windows
-
 # Установите зависимости
 pip install -r requirements.txt
 
-# Инициализируйте базу данных
-python init_db.py
-
-# Запустите сервер
+# Запустите сервер (БД создаётся автоматически)
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-#### 3. Frontend
+#### 2. Frontend
 
 ```bash
 cd frontend
@@ -198,7 +202,7 @@ npm install
 npm run dev
 ```
 
-#### 4. Telegram бот
+#### 3. Telegram бот
 
 ```bash
 cd telegram_bot
@@ -208,6 +212,31 @@ pip install -r requirements.txt
 
 # Запустите бота
 python main.py
+```
+
+---
+
+## Docker
+
+### Быстрый запуск
+
+```bash
+# Сборка и запуск
+docker-compose up -d --build
+
+# Просмотр логов
+docker-compose logs -f
+```
+
+### Переменные окружения для Docker
+
+Создайте файл `.env` в корне проекта:
+
+```env
+TELEGRAM_BOT_TOKEN=ваш_токен_бота
+WEBAPP_URL=http://ваш-домен.com
+SECRET_KEY=ваш-секретный-ключ
+NOTIFY_SECRET=секрет-для-уведомлений
 ```
 
 ---
@@ -230,6 +259,8 @@ python main.py
 | GET | `/api/categories` | Список категорий |
 | POST | `/api/auth/login` | Авторизация |
 | GET | `/api/stats` | Статистика |
+| GET | `/api/statuses` | Конфигурация статусов |
+| GET | `/api/tags` | Теги |
 
 ---
 
@@ -239,7 +270,7 @@ python main.py
 
 1. Импортируйте проект в Replit
 2. Настройте переменные окружения в секретах
-3. База данных PostgreSQL создаётся автоматически
+3. База данных SQLite создаётся автоматически
 4. Нажмите "Publish" для деплоя
 
 ### Docker
@@ -258,7 +289,7 @@ docker-compose up -d
 2. Используйте Gunicorn для production:
 
 ```bash
-gunicorn -w 4 -b 0.0.0.0:8000 main:app
+gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:8000
 ```
 
 3. Соберите frontend:
@@ -298,7 +329,7 @@ npm run build
 
 ## Учётные данные по умолчанию
 
-После инициализации БД доступны тестовые аккаунты:
+После запуска backend автоматически создаются тестовые аккаунты:
 
 | Роль | Логин | Пароль |
 |------|-------|--------|
@@ -320,21 +351,21 @@ npm run build
 | `resolved` | Решено |
 | `rejected` | Отклонено |
 
+Статусы можно настраивать через админ-панель.
+
 ### Типы файлов
 
 Поддерживаются: изображения, документы (PDF, DOC, XLS), архивы, аудио и видео.
 
 ---
 
-## Мобильное приложение
+## Порты по умолчанию
 
-Проект может быть расширен мобильными приложениями на React Native. Архитектура предусматривает:
-
-- Готовый REST API для мобильных клиентов
-- JWT аутентификация
-- Поддержка push-уведомлений через Telegram
-
-Для разработки мобильного приложения потребуется создать отдельный проект на React Native, использующий существующий API.
+| Сервис | Порт | Описание |
+|--------|------|----------|
+| Frontend | 5000 | Vite dev server / Nginx (Docker) |
+| Backend | 8000 | FastAPI сервер |
+| Telegram Bot | 3001 | HTTP сервер уведомлений |
 
 ---
 
