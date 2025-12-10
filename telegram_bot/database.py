@@ -4,22 +4,36 @@ from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 from typing import Optional, List, Dict
 import os
+from pathlib import Path
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+USE_SQLITE = os.environ.get("USE_SQLITE", "true").lower() == "true"
 
-if not DATABASE_URL:
-    raise Exception("DATABASE_URL environment variable is not set!")
+if USE_SQLITE:
+    db_path = Path(__file__).parent.parent / "backend" / "citizens_appeals.db"
+    DATABASE_URL = f"sqlite:///{db_path}"
+else:
+    DATABASE_URL = os.environ.get("DATABASE_URL", "")
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL environment variable is not set!")
 
 connect_args = {}
+engine_kwargs = {}
+
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+else:
+    engine_kwargs = {
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_timeout": 30,
+        "pool_recycle": 1800,
+        "pool_pre_ping": True,
+    }
 
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
-    pool_size=5,
-    max_overflow=10,
-    pool_timeout=30,
-    pool_recycle=1800,
-    pool_pre_ping=True,
+    **engine_kwargs
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
